@@ -452,12 +452,12 @@ client.on(
                 );
 
             if (
-                guildData.users.length >= 4
+                guildData.users.length >= 10
             ) {
 
                 return interaction.reply({
                     content:
-                        "❌ You already have 4 users tracked.",
+                        "❌ You already have 10 users tracked.",
                     ephemeral: true
                 });
             }
