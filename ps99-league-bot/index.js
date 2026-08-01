@@ -118,70 +118,33 @@ async function findRobloxUser(username) {
 }
 
 // ============================================================
-// GET PLAYER LEAGUE
+// GET FULL LEAGUE
 // ============================================================
 
-async function getPlayerLeague(userId) {
-
-    const response = await fetch(
-        `${PS99_API}/leagues/players/${userId}`
+async function getLeague(leagueName) {
+    const result = await getJson(
+        `${PS99_API}/leagues/${encodeURIComponent(leagueName)}`
     );
 
-    let body;
-
-    try {
-        body = await response.json();
-    } catch {
-        body = null;
-    }
-
-    if (response.status === 404) {
-        return null;
-    }
-
-    if (!response.ok) {
-        throw new Error(
-            body?.error?.message ||
-            `PS99 API returned HTTP ${response.status}`
-        );
-    }
-
-    if (
-        !body ||
-        body.status !== "ok" ||
-        !body.data
-    ) {
-        return null;
-    }
-
-    return body.data;
+    return result.data;
 }
 
 // ============================================================
-// GET LEAGUE RANK
+// FIND PLAYER INSIDE SPECIFIED LEAGUE
 // ============================================================
 
-async function getLeagueDetails(
+async function getPlayerFromLeague(
     leagueName,
-    userId
+    robloxUserId
 ) {
+    const league = await getLeague(leagueName);
 
-    const result = await getJson(
-        `${PS99_API}/leagues/${encodeURIComponent(
-            leagueName
-        )}`
-    );
-
-    if (!result.data) {
+    if (!league) {
         return null;
     }
 
-    const league = result.data;
-
     const contributions =
-        Array.isArray(
-            league.PointContributions
-        )
+        Array.isArray(league.PointContributions)
             ? league.PointContributions
             : [];
 
@@ -189,19 +152,17 @@ async function getLeagueDetails(
         contributions.findIndex(
             player =>
                 Number(player.UserID) ===
-                Number(userId)
+                Number(robloxUserId)
         );
 
     if (index === -1) {
         return null;
     }
 
-    const player =
-        contributions[index];
+    const player = contributions[index];
 
     return {
-        leagueName:
-            league.Name,
+        leagueName: league.Name,
 
         leaguePoints:
             Number(player.Points || 0),
@@ -212,40 +173,26 @@ async function getLeagueDetails(
 }
 
 // ============================================================
-// CHECK PLAYER
+// CHECK TRACKED USER
 // ============================================================
 
 async function checkPlayer(tracked) {
 
-    const contribution =
-        await getPlayerLeague(
-            tracked.robloxUserId
-        );
-
-    if (!contribution) {
+    if (!tracked.leagueName) {
         return {
-            status: "NO_LEAGUE_DATA"
+            status: "NO_LEAGUE_SET"
         };
     }
 
-    const leagueName =
-        contribution.League?.Name;
-
-    if (!leagueName) {
-        return {
-            status: "NO_LEAGUE"
-        };
-    }
-
-    const details =
-        await getLeagueDetails(
-            leagueName,
+    const result =
+        await getPlayerFromLeague(
+            tracked.leagueName,
             tracked.robloxUserId
         );
 
-    if (!details) {
+    if (!result) {
         return {
-            status: "NO_LEAGUE_DATA"
+            status: "NOT_IN_LEAGUE"
         };
     }
 
@@ -262,7 +209,7 @@ async function checkPlayer(tracked) {
         previousPoints !== undefined
     ) {
         gain =
-            details.leaguePoints -
+            result.leaguePoints -
             previousPoints;
     }
 
@@ -274,20 +221,34 @@ async function checkPlayer(tracked) {
     ) {
         rankChange =
             previousRank -
-            details.leagueRank;
+            result.leagueRank;
     }
 
-    const result = {
+    tracked.lastLeague =
+        result.leagueName;
+
+    tracked.lastLeaguePoints =
+        result.leaguePoints;
+
+    tracked.lastLeagueRank =
+        result.leagueRank;
+
+    tracked.lastChecked =
+        Date.now();
+
+    saveData();
+
+    return {
         status: "OK",
 
         leagueName:
-            details.leagueName,
+            result.leagueName,
 
         leaguePoints:
-            details.leaguePoints,
+            result.leaguePoints,
 
         leagueRank:
-            details.leagueRank,
+            result.leagueRank,
 
         gain,
 
@@ -297,22 +258,6 @@ async function checkPlayer(tracked) {
 
         previousRank
     };
-
-    tracked.lastLeague =
-        details.leagueName;
-
-    tracked.lastLeaguePoints =
-        details.leaguePoints;
-
-    tracked.lastLeagueRank =
-        details.leagueRank;
-
-    tracked.lastChecked =
-        Date.now();
-
-    saveData();
-
-    return result;
 }
 
 // ============================================================
@@ -324,13 +269,35 @@ const commands = [
     new SlashCommandBuilder()
         .setName("adduser")
         .setDescription(
-            "Track a Roblox player for PS99 League Points"
+            "Add a Roblox player to the tracker"
         )
         .addStringOption(option =>
             option
                 .setName("username")
                 .setDescription(
                     "Roblox username"
+                )
+                .setRequired(true)
+        ),
+
+    new SlashCommandBuilder()
+        .setName("setleague")
+        .setDescription(
+            "Set the League for a tracked player"
+        )
+        .addUserOption(option =>
+            option
+                .setName("user")
+                .setDescription(
+                    "Discord user being tracked"
+                )
+                .setRequired(true)
+        )
+        .addStringOption(option =>
+            option
+                .setName("league")
+                .setDescription(
+                    "Exact PS99 League name"
                 )
                 .setRequired(true)
         ),
@@ -338,13 +305,13 @@ const commands = [
     new SlashCommandBuilder()
         .setName("removeuser")
         .setDescription(
-            "Stop tracking a Roblox player"
+            "Remove a tracked Roblox player"
         )
-        .addStringOption(option =>
+        .addUserOption(option =>
             option
-                .setName("username")
+                .setName("user")
                 .setDescription(
-                    "Roblox username"
+                    "Discord user to remove"
                 )
                 .setRequired(true)
         ),
@@ -352,19 +319,33 @@ const commands = [
     new SlashCommandBuilder()
         .setName("users")
         .setDescription(
-            "Show all tracked users"
+            "Show tracked users"
         ),
 
     new SlashCommandBuilder()
         .setName("check")
         .setDescription(
-            "Immediately check all tracked users"
+            "Check everyone now"
+        ),
+
+    new SlashCommandBuilder()
+        .setName("lockin")
+        .setDescription(
+            "Ping someone 5 times to lock in"
+        )
+        .addUserOption(option =>
+            option
+                .setName("user")
+                .setDescription(
+                    "Person to ping"
+                )
+                .setRequired(true)
         )
 
 ].map(command => command.toJSON());
 
 // ============================================================
-// BOT READY
+// READY
 // ============================================================
 
 client.once("ready", async () => {
@@ -396,7 +377,7 @@ client.once("ready", async () => {
     } catch (error) {
 
         console.error(
-            "❌ Failed to register commands:",
+            "❌ Command registration error:",
             error
         );
     }
@@ -413,7 +394,7 @@ client.once("ready", async () => {
 });
 
 // ============================================================
-// COMMAND HANDLER
+// INTERACTIONS
 // ============================================================
 
 client.on(
@@ -427,7 +408,7 @@ client.on(
         if (!interaction.guildId) {
             return interaction.reply({
                 content:
-                    "❌ Use this command inside a server.",
+                    "❌ Use this inside a Discord server.",
                 ephemeral: true
             });
         }
@@ -457,23 +438,23 @@ client.on(
 
                 return interaction.reply({
                     content:
-                        "❌ You already have 10 users tracked.",
+                        "❌ You already have 10 tracked users.",
                     ephemeral: true
                 });
             }
 
-            const alreadyTracked =
+            const already =
                 guildData.users.some(
                     user =>
                         user.username.toLowerCase() ===
                         username.toLowerCase()
                 );
 
-            if (alreadyTracked) {
+            if (already) {
 
                 return interaction.reply({
                     content:
-                        "❌ That Roblox user is already being tracked.",
+                        "❌ That Roblox user is already tracked.",
                     ephemeral: true
                 });
             }
@@ -482,34 +463,37 @@ client.on(
 
             try {
 
-                const robloxUser =
+                const roblox =
                     await findRobloxUser(
                         username
                     );
 
-                if (!robloxUser) {
+                if (!roblox) {
 
                     return interaction.editReply(
-                        `❌ I couldn't find the Roblox user **${username}**.`
+                        `❌ Roblox user **${username}** was not found.`
                     );
                 }
 
                 const tracked = {
 
                     username:
-                        robloxUser.username,
+                        roblox.username,
 
                     displayName:
-                        robloxUser.displayName,
+                        roblox.displayName,
 
                     robloxUserId:
-                        robloxUser.userId,
+                        roblox.userId,
 
                     discordUserId:
                         interaction.user.id,
 
                     channelId:
                         interaction.channelId,
+
+                    leagueName:
+                        null,
 
                     lastLeague:
                         null,
@@ -530,6 +514,79 @@ client.on(
 
                 saveData();
 
+                return interaction.editReply(
+                    `✅ **${roblox.username}** was added!\n\n` +
+                    `👤 Discord: <@${interaction.user.id}>\n\n` +
+                    `⚠️ Now use:\n` +
+                    `\`/setleague user:@${interaction.user.username} league:YOUR_LEAGUE\``
+                );
+
+            } catch (error) {
+
+                console.error(error);
+
+                return interaction.editReply(
+                    "❌ Something went wrong while finding the Roblox account."
+                );
+            }
+        }
+
+        // ====================================================
+        // SET LEAGUE
+        // ====================================================
+
+        if (
+            interaction.commandName ===
+            "setleague"
+        ) {
+
+            const discordUser =
+                interaction.options.getUser(
+                    "user"
+                );
+
+            const leagueName =
+                interaction.options.getString(
+                    "league"
+                );
+
+            const tracked =
+                guildData.users.find(
+                    user =>
+                        user.discordUserId ===
+                        discordUser.id
+                );
+
+            if (!tracked) {
+
+                return interaction.reply({
+                    content:
+                        `❌ <@${discordUser.id}> doesn't have a tracked Roblox account yet.`,
+                    ephemeral: true
+                });
+            }
+
+            await interaction.deferReply();
+
+            try {
+
+                const league =
+                    await getLeague(
+                        leagueName
+                    );
+
+                if (!league) {
+
+                    return interaction.editReply(
+                        `❌ League **${leagueName}** wasn't found.`
+                    );
+                }
+
+                tracked.leagueName =
+                    league.Name;
+
+                saveData();
+
                 const result =
                     await checkPlayer(
                         tracked
@@ -541,7 +598,7 @@ client.on(
                 ) {
 
                     return interaction.editReply(
-                        `✅ **${robloxUser.username}** is now being tracked!\n\n` +
+                        `✅ League set for <@${discordUser.id}>\n\n` +
 
                         `🏆 **League:** ${result.leagueName}\n` +
 
@@ -549,28 +606,21 @@ client.on(
 
                         `⭐ **League Points:** ${result.leaguePoints.toLocaleString()}\n\n` +
 
-                        `⏰ I'll check every **5 minutes**.`
+                        `⏰ Tracking every **5 minutes**.`
                     );
                 }
 
                 return interaction.editReply(
-                    `✅ **${robloxUser.username}** was added!\n\n` +
-
-                    `🕐 No active League contribution data is available yet.\n\n` +
-
-                    `I'll automatically keep checking every **5 minutes**.`
+                    `✅ League **${league.Name}** was saved for <@${discordUser.id}>.\n\n` +
+                    `⚠️ That player isn't currently in the League's contribution list.`
                 );
 
             } catch (error) {
 
-                console.error(
-                    "Add user error:",
-                    error
-                );
+                console.error(error);
 
                 return interaction.editReply(
-                    `❌ Roblox user was found, but I couldn't read their PS99 League data yet.\n\n` +
-                    `I'll keep checking automatically.`
+                    `❌ Couldn't find League **${leagueName}**.`
                 );
             }
         }
@@ -584,9 +634,9 @@ client.on(
             "removeuser"
         ) {
 
-            const username =
-                interaction.options.getString(
-                    "username"
+            const discordUser =
+                interaction.options.getUser(
+                    "user"
                 );
 
             const before =
@@ -595,8 +645,8 @@ client.on(
             guildData.users =
                 guildData.users.filter(
                     user =>
-                        user.username.toLowerCase() !==
-                        username.toLowerCase()
+                        user.discordUserId !==
+                        discordUser.id
                 );
 
             if (
@@ -606,7 +656,7 @@ client.on(
 
                 return interaction.reply({
                     content:
-                        "❌ That user isn't being tracked.",
+                        "❌ That Discord user isn't being tracked.",
                     ephemeral: true
                 });
             }
@@ -614,7 +664,7 @@ client.on(
             saveData();
 
             return interaction.reply(
-                `✅ Stopped tracking **${username}**.`
+                `✅ Removed <@${discordUser.id}> from the tracker.`
             );
         }
 
@@ -642,10 +692,6 @@ client.on(
                     .map(
                         (user, index) => {
 
-                            const league =
-                                user.lastLeague ||
-                                "No active League data";
-
                             const rank =
                                 user.lastLeagueRank
                                     ? `#${user.lastLeagueRank}`
@@ -657,8 +703,8 @@ client.on(
                                     : "Unknown";
 
                             return (
-                                `**${index + 1}. ${user.username}**\n` +
-                                `🏆 League: **${league}**\n` +
+                                `**${index + 1}. ${user.username}** — <@${user.discordUserId}>\n` +
+                                `🏆 League: **${user.leagueName || "Not set"}**\n` +
                                 `📊 League Rank: **${rank}**\n` +
                                 `⭐ League Points: **${points}**`
                             );
@@ -672,7 +718,7 @@ client.on(
         }
 
         // ====================================================
-        // MANUAL CHECK
+        // CHECK
         // ====================================================
 
         if (
@@ -707,47 +753,53 @@ client.on(
                         );
 
                     if (
-                        result.status !==
-                        "OK"
+                        result.status ===
+                        "NO_LEAGUE_SET"
                     ) {
 
                         results.push(
                             `👤 **${user.username}**\n` +
-                            `🕐 No active League contribution data found.`
+                            `⚠️ League hasn't been set.`
                         );
 
                         continue;
                     }
 
-                    let gainText =
-                        "First check";
-
                     if (
-                        result.gain !== null
+                        result.status ===
+                        "NOT_IN_LEAGUE"
                     ) {
 
-                        gainText =
-                            result.gain > 0
+                        results.push(
+                            `👤 **${user.username}**\n` +
+                            `🏆 League: **${user.leagueName}**\n` +
+                            `⚠️ Player isn't currently in the contribution list.`
+                        );
+
+                        continue;
+                    }
+
+                    const gain =
+                        result.gain === null
+                            ? "Baseline"
+                            : result.gain > 0
                                 ? `+${result.gain.toLocaleString()}`
                                 : result.gain.toLocaleString();
-                    }
 
                     results.push(
                         `👤 **${user.username}**\n` +
                         `🏆 League: **${result.leagueName}**\n` +
                         `📊 League Rank: **#${result.leagueRank}**\n` +
                         `⭐ League Points: **${result.leaguePoints.toLocaleString()}**\n` +
-                        `📈 5m Gain: **${gainText}**`
+                        `📈 5m Gain: **${gain}**`
                     );
 
                 } catch (error) {
 
-                    console.error(
-                        error
-                    );
+                    console.error(error);
 
                     results.push(
-                        `❌ **${user.username}** — temporary API error.`
+                        `❌ **${user.username}** — API error.`
                     );
                 }
             }
@@ -755,6 +807,46 @@ client.on(
             return interaction.editReply(
                 results.join("\n\n")
             );
+        }
+
+        // ====================================================
+        // LOCK IN
+        // ====================================================
+
+        if (
+            interaction.commandName ===
+            "lockin"
+        ) {
+
+            const user =
+                interaction.options.getUser(
+                    "user"
+                );
+
+            await interaction.reply(
+                `🔒 **LOCK IN GET ON** <@${user.id}>`
+            );
+
+            for (
+                let i = 1;
+                i < 5;
+                i++
+            ) {
+
+                await new Promise(
+                    resolve =>
+                        setTimeout(
+                            resolve,
+                            500
+                        )
+                );
+
+                await interaction.followUp(
+                    `🔒 **LOCK IN GET ON** <@${user.id}>`
+                );
+            }
+
+            return;
         }
     }
 );
@@ -766,7 +858,7 @@ client.on(
 async function runTracker() {
 
     console.log(
-        `[${new Date().toLocaleString()}] Checking League Points...`
+        `[${new Date().toLocaleString()}] Checking tracked users...`
     );
 
     for (
@@ -797,6 +889,10 @@ async function runTracker() {
 
             try {
 
+                if (!tracked.leagueName) {
+                    continue;
+                }
+
                 const result =
                     await checkPlayer(
                         tracked
@@ -808,14 +904,13 @@ async function runTracker() {
                 ) {
 
                     console.log(
-                        `${tracked.username}: no League data`
+                        `${tracked.username}: no contribution found`
                     );
 
                     continue;
                 }
 
-                // First successful check:
-                // establish baseline.
+                // First successful check = baseline.
                 if (
                     result.gain === null
                 ) {
@@ -828,7 +923,7 @@ async function runTracker() {
                 }
 
                 // =================================================
-                // NO LP GAIN
+                // NO GAIN = ONE PING
                 // =================================================
 
                 if (
@@ -844,12 +939,9 @@ async function runTracker() {
                         continue;
                     }
 
-                    const mention =
-                        `<@${tracked.discordUserId}>`;
-
                     await channel.send({
                         content:
-                            `${mention}\n\n` +
+                            `<@${tracked.discordUserId}>\n\n` +
 
                             `🚨 **NO LEAGUE POINTS GAINED**\n\n` +
 
@@ -869,7 +961,7 @@ async function runTracker() {
                     });
 
                     console.log(
-                        `🚨 No LP gain: ${tracked.username}`
+                        `🚨 Pinged ${tracked.username}`
                     );
 
                 } else {
@@ -891,26 +983,20 @@ async function runTracker() {
 }
 
 // ============================================================
-// START TRACKER
+// START
 // ============================================================
 
 function startTracker() {
 
-    // First automatic check 10 seconds after startup.
     setTimeout(
         runTracker,
         10_000
     );
 
-    // Then every 5 minutes.
     setInterval(
         runTracker,
         5 * 60 * 1000
     );
 }
-
-// ============================================================
-// LOGIN
-// ============================================================
 
 client.login(TOKEN);
