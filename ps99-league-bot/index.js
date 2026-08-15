@@ -20,6 +20,11 @@ const path = require("path");
 
 const TOKEN = process.env.DISCORD_TOKEN;
 
+if (!TOKEN) {
+    console.error("DISCORD_TOKEN is missing from .env");
+    process.exit(1);
+}
+
 // ============================================================
 // CONFIG
 // ============================================================
@@ -30,11 +35,6 @@ const PS99_API = "https://ps99.biggamesapi.io/v1";
 const ROBLOX_API = "https://users.roblox.com/v1";
 
 const DATA_FILE = path.join(__dirname, "data.json");
-
-if (!TOKEN) {
-    console.error("❌ DISCORD_TOKEN is missing from .env");
-    process.exit(1);
-}
 
 const client = new Client({
     intents: [GatewayIntentBits.Guilds]
@@ -67,19 +67,14 @@ function getGuildData(guildId) {
     if (!data[guildId]) {
         data[guildId] = {
             users: [],
-
             bank: {
                 gems: 0,
                 items: []
             },
-
             requests: {}
         };
-
-        saveData();
     }
 
-    // Upgrade older data files automatically
     if (!data[guildId].users) {
         data[guildId].users = [];
     }
@@ -111,16 +106,14 @@ function getGuildData(guildId) {
 // ============================================================
 
 function hasBankRole(interaction) {
-    if (!interaction.guild) {
+    if (!interaction.guild || !interaction.member) {
         return false;
     }
 
-    return interaction.member.roles.cache.has(
-        BANK_ROLE_ID
-    );
+    return interaction.member.roles.cache.has(BANK_ROLE_ID);
 }
 
-function denyPermission(interaction) {
+async function denyPermission(interaction) {
     return interaction.reply({
         content:
             "❌ You don't have permission to use this command.",
@@ -135,7 +128,7 @@ function denyPermission(interaction) {
 async function getJson(url, options = {}) {
     const response = await fetch(url, options);
 
-    let body;
+    let body = null;
 
     try {
         body = await response.json();
@@ -195,7 +188,7 @@ async function getPlayerLeague(userId) {
         `${PS99_API}/leagues/players/${userId}`
     );
 
-    let body;
+    let body = null;
 
     try {
         body = await response.json();
@@ -229,14 +222,9 @@ async function getPlayerLeague(userId) {
 // GET LEAGUE RANK
 // ============================================================
 
-async function getLeagueDetails(
-    leagueName,
-    userId
-) {
+async function getLeagueDetails(leagueName, userId) {
     const result = await getJson(
-        `${PS99_API}/leagues/${encodeURIComponent(
-            leagueName
-        )}`
+        `${PS99_API}/leagues/${encodeURIComponent(leagueName)}`
     );
 
     if (!result.data) {
@@ -250,28 +238,21 @@ async function getLeagueDetails(
             ? league.PointContributions
             : [];
 
-    const index =
-        contributions.findIndex(
-            player =>
-                Number(player.UserID) ===
-                Number(userId)
-        );
+    const index = contributions.findIndex(
+        player =>
+            Number(player.UserID) === Number(userId)
+    );
 
     if (index === -1) {
         return null;
     }
 
-    const player =
-        contributions[index];
+    const player = contributions[index];
 
     return {
         leagueName: league.Name,
-
-        leaguePoints:
-            Number(player.Points || 0),
-
-        leagueRank:
-            index + 1
+        leaguePoints: Number(player.Points || 0),
+        leagueRank: index + 1
     };
 }
 
@@ -342,22 +323,12 @@ async function checkPlayer(tracked) {
 
     const result = {
         status: "OK",
-
-        leagueName:
-            details.leagueName,
-
-        leaguePoints:
-            details.leaguePoints,
-
-        leagueRank:
-            details.leagueRank,
-
+        leagueName: details.leagueName,
+        leaguePoints: details.leaguePoints,
+        leagueRank: details.leagueRank,
         gain,
-
         rankChange,
-
         previousPoints,
-
         previousRank
     };
 
@@ -379,15 +350,130 @@ async function checkPlayer(tracked) {
 }
 
 // ============================================================
+// REQUEST HELPERS
+// ============================================================
+
+function generateRequestId() {
+    return (
+        Date.now().toString(36) +
+        Math.random()
+            .toString(36)
+            .substring(2, 8)
+    );
+}
+
+function getOpenRequest(guildData, userId) {
+    return Object.values(
+        guildData.requests
+    ).find(
+        request =>
+            request.userId === userId &&
+            request.status === "pending"
+    );
+}
+
+// ============================================================
+// NOTIFY BANK OWNERS
+// ============================================================
+
+async function notifyOwners(guild, request) {
+    const role =
+        guild.roles.cache.get(BANK_ROLE_ID);
+
+    if (!role) {
+        console.error(
+            `Bank role ${BANK_ROLE_ID} was not found.`
+        );
+        return [];
+    }
+
+    const ownerIds = [];
+
+    for (const member of role.members.values()) {
+        try {
+            const embed =
+                new EmbedBuilder()
+                    .setTitle(
+                        "🏦 New League Bank Request"
+                    )
+                    .setDescription(
+                        "A member has submitted a League Bank request."
+                    )
+                    .addFields(
+                        {
+                            name: "👤 Discord User",
+                            value:
+                                `<@${request.userId}>`,
+                            inline: true
+                        },
+                        {
+                            name: "🎮 Roblox User",
+                            value:
+                                request.robloxUsername,
+                            inline: true
+                        },
+                        {
+                            name: "💰 Amount / Items",
+                            value:
+                                request.amount
+                        },
+                        {
+                            name: "📝 Reason",
+                            value:
+                                request.reason
+                        }
+                    )
+                    .setFooter({
+                        text:
+                            `Request ID: ${request.id}`
+                    });
+
+            const buttons =
+                new ActionRowBuilder()
+                    .addComponents(
+                        new ButtonBuilder()
+                            .setCustomId(
+                                `bank_approve_${request.id}`
+                            )
+                            .setLabel("Approve")
+                            .setStyle(
+                                ButtonStyle.Success
+                            ),
+
+                        new ButtonBuilder()
+                            .setCustomId(
+                                `bank_reject_${request.id}`
+                            )
+                            .setLabel("Reject")
+                            .setStyle(
+                                ButtonStyle.Danger
+                            )
+                    );
+
+            await member.send({
+                embeds: [embed],
+                components: [buttons]
+            });
+
+            ownerIds.push(member.id);
+
+        } catch (error) {
+            console.error(
+                `Could not DM ${member.user.tag}: ${error.message}`
+            );
+        }
+    }
+
+    return ownerIds;
+}
+
+// ============================================================
 // COMMANDS
 // ============================================================
 
 const commands = [
 
-    // --------------------------------------------------------
     // TRACKER
-    // --------------------------------------------------------
-
     new SlashCommandBuilder()
         .setName("adduser")
         .setDescription(
@@ -396,7 +482,9 @@ const commands = [
         .addStringOption(option =>
             option
                 .setName("username")
-                .setDescription("Roblox username")
+                .setDescription(
+                    "Roblox username"
+                )
                 .setRequired(true)
         ),
 
@@ -408,7 +496,9 @@ const commands = [
         .addStringOption(option =>
             option
                 .setName("username")
-                .setDescription("Roblox username")
+                .setDescription(
+                    "Roblox username"
+                )
                 .setRequired(true)
         ),
 
@@ -427,13 +517,10 @@ const commands = [
     new SlashCommandBuilder()
         .setName("factoryreset")
         .setDescription(
-            "Remove every tracked PS99 player"
+            "Remove all tracked PS99 players"
         ),
 
-    // --------------------------------------------------------
     // BANK
-    // --------------------------------------------------------
-
     new SlashCommandBuilder()
         .setName("bank")
         .setDescription(
@@ -443,7 +530,7 @@ const commands = [
     new SlashCommandBuilder()
         .setName("bankadd")
         .setDescription(
-            "Add gems or an item to the League Bank"
+            "Add gems or items to the League Bank"
         )
         .addStringOption(option =>
             option
@@ -467,7 +554,7 @@ const commands = [
             option
                 .setName("amount")
                 .setDescription(
-                    "Amount of gems/items"
+                    "Amount"
                 )
                 .setMinValue(1)
                 .setRequired(true)
@@ -476,7 +563,7 @@ const commands = [
             option
                 .setName("item")
                 .setDescription(
-                    "Item name (required for items)"
+                    "Item name if adding an item"
                 )
                 .setRequired(false)
         ),
@@ -484,7 +571,7 @@ const commands = [
     new SlashCommandBuilder()
         .setName("bankremove")
         .setDescription(
-            "Remove gems or an item from the League Bank"
+            "Remove gems or items from the League Bank"
         )
         .addStringOption(option =>
             option
@@ -508,7 +595,7 @@ const commands = [
             option
                 .setName("amount")
                 .setDescription(
-                    "Amount of gems/items"
+                    "Amount"
                 )
                 .setMinValue(1)
                 .setRequired(true)
@@ -517,15 +604,12 @@ const commands = [
             option
                 .setName("item")
                 .setDescription(
-                    "Item name (required for items)"
+                    "Item name if removing an item"
                 )
                 .setRequired(false)
         ),
 
-    // --------------------------------------------------------
-    // REQUESTS
-    // --------------------------------------------------------
-
+    // REQUEST
     new SlashCommandBuilder()
         .setName("request")
         .setDescription(
@@ -535,147 +619,13 @@ const commands = [
 ].map(command => command.toJSON());
 
 // ============================================================
-// REQUEST ID
-// ============================================================
-
-function generateRequestId() {
-    return (
-        Date.now().toString(36) +
-        Math.random()
-            .toString(36)
-            .substring(2, 8)
-    );
-}
-
-// ============================================================
-// FIND OPEN REQUEST
-// ============================================================
-
-function getUserOpenRequest(
-    guildData,
-    discordUserId
-) {
-    return Object.values(
-        guildData.requests
-    ).find(
-        request =>
-            request.userId === discordUserId &&
-            request.status === "pending"
-    );
-}
-
-// ============================================================
-// DM OWNERS
-// ============================================================
-
-async function notifyOwners(
-    guild,
-    request
-) {
-    const role =
-        guild.roles.cache.get(
-            BANK_ROLE_ID
-        );
-
-    if (!role) {
-        console.error(
-            `❌ Bank role ${BANK_ROLE_ID} not found.`
-        );
-        return [];
-    }
-
-    const ownerIds = [];
-
-    for (
-        const member of role.members.values()
-    ) {
-        try {
-            await member.send({
-                embeds: [
-                    new EmbedBuilder()
-                        .setTitle(
-                            "🏦 New League Bank Request"
-                        )
-                        .setDescription(
-                            `A member has requested something from the League Bank.`
-                        )
-                        .addFields(
-                            {
-                                name: "👤 Discord User",
-                                value:
-                                    `<@${request.userId}>`
-                            },
-                            {
-                                name: "🎮 Roblox User",
-                                value:
-                                    request.robloxUsername
-                            },
-                            {
-                                name: "💰 Amount",
-                                value:
-                                    request.amount
-                            },
-                            {
-                                name: "📝 Reason",
-                                value:
-                                    request.reason
-                            }
-                        )
-                        .setFooter({
-                            text:
-                                `Request ID: ${request.id}`
-                        })
-                ],
-
-                components: [
-                    new ActionRowBuilder()
-                        .addComponents(
-                            new ButtonBuilder()
-                                .setCustomId(
-                                    `bank_approve_${request.id}`
-                                )
-                                .setLabel(
-                                    "Approve"
-                                )
-                                .setStyle(
-                                    ButtonStyle.Success
-                                ),
-
-                            new ButtonBuilder()
-                                .setCustomId(
-                                    `bank_reject_${request.id}`
-                                )
-                                .setLabel(
-                                    "Reject"
-                                )
-                                .setStyle(
-                                    ButtonStyle.Danger
-                                )
-                        ]
-                ]
-            });
-
-            ownerIds.push(member.id);
-
-        } catch (error) {
-            console.error(
-                `Couldn't DM ${member.user.tag}:`,
-                error.message
-            );
-        }
-    }
-
-    return ownerIds;
-}
-
-// ============================================================
-// BOT READY
+// READY
 // ============================================================
 
 client.once("ready", async () => {
 
     console.log(
-        `✅ Logged in as ${client.user.tag}`
+        `Logged in as ${client.user.tag}`
     );
 
     const rest =
@@ -684,7 +634,6 @@ client.once("ready", async () => {
         }).setToken(TOKEN);
 
     try {
-
         await rest.put(
             Routes.applicationCommands(
                 client.user.id
@@ -695,34 +644,33 @@ client.once("ready", async () => {
         );
 
         console.log(
-            "✅ Slash commands registered."
+            "Slash commands registered."
         );
 
     } catch (error) {
-
         console.error(
-            "❌ Failed to register commands:",
+            "Failed to register commands:",
             error
         );
     }
 
     console.log(
-        "🏦 League Bank system loaded."
+        "PS99 League Tracker is running."
     );
 
     console.log(
-        "🏆 PS99 League Tracker is running."
+        "League Bank is running."
     );
 
     console.log(
-        "⏰ Checking every 5 minutes."
+        "Checking every 5 minutes."
     );
 
     startTracker();
 });
 
 // ============================================================
-// INTERACTION HANDLER
+// INTERACTIONS
 // ============================================================
 
 client.on(
@@ -733,9 +681,7 @@ client.on(
         // SLASH COMMANDS
         // ====================================================
 
-        if (
-            interaction.isChatInputCommand()
-        ) {
+        if (interaction.isChatInputCommand()) {
 
             if (!interaction.guildId) {
                 return interaction.reply({
@@ -767,7 +713,6 @@ client.on(
                 if (
                     guildData.users.length >= 10
                 ) {
-
                     return interaction.reply({
                         content:
                             "❌ You already have 10 users tracked.",
@@ -783,7 +728,6 @@ client.on(
                     );
 
                 if (alreadyTracked) {
-
                     return interaction.reply({
                         content:
                             "❌ That Roblox user is already being tracked.",
@@ -801,14 +745,12 @@ client.on(
                         );
 
                     if (!robloxUser) {
-
                         return interaction.editReply(
                             `❌ I couldn't find the Roblox user **${username}**.`
                         );
                     }
 
                     const tracked = {
-
                         username:
                             robloxUser.username,
 
@@ -852,7 +794,6 @@ client.on(
                         result.status ===
                         "OK"
                     ) {
-
                         return interaction.editReply(
                             `✅ **${robloxUser.username}** is now being tracked!\n\n` +
                             `🏆 **League:** ${result.leagueName}\n` +
@@ -865,7 +806,7 @@ client.on(
                     return interaction.editReply(
                         `✅ **${robloxUser.username}** was added!\n\n` +
                         `🕐 No active League contribution data is available yet.\n\n` +
-                        `I'll automatically keep checking every **5 minutes**.`
+                        `I'll keep checking automatically.`
                     );
 
                 } catch (error) {
@@ -876,8 +817,7 @@ client.on(
                     );
 
                     return interaction.editReply(
-                        `❌ Roblox user was found, but I couldn't read their PS99 League data yet.\n\n` +
-                        `I'll keep checking automatically.`
+                        "❌ I couldn't read that player's PS99 League data yet. I'll keep checking automatically."
                     );
                 }
             }
@@ -910,7 +850,6 @@ client.on(
                     guildData.users.length ===
                     before
                 ) {
-
                     return interaction.reply({
                         content:
                             "❌ That user isn't being tracked.",
@@ -938,7 +877,6 @@ client.on(
                     guildData.users.length ===
                     0
                 ) {
-
                     return interaction.reply(
                         "📭 No users are being tracked."
                     );
@@ -959,7 +897,8 @@ client.on(
                                         : "Unknown";
 
                                 const points =
-                                    user.lastLeaguePoints !== null
+                                    user.lastLeaguePoints !== null &&
+                                    user.lastLeaguePoints !== undefined
                                         ? user.lastLeaguePoints.toLocaleString()
                                         : "Unknown";
 
@@ -979,7 +918,7 @@ client.on(
             }
 
             // =================================================
-            // MANUAL CHECK
+            // CHECK
             // =================================================
 
             if (
@@ -993,7 +932,6 @@ client.on(
                     guildData.users.length ===
                     0
                 ) {
-
                     return interaction.editReply(
                         "📭 No users are being tracked."
                     );
@@ -1030,9 +968,9 @@ client.on(
                             "First check";
 
                         if (
-                            result.gain !== null
+                            result.gain !==
+                            null
                         ) {
-
                             gainText =
                                 result.gain > 0
                                     ? `+${result.gain.toLocaleString()}`
@@ -1087,12 +1025,12 @@ client.on(
                 return interaction.reply(
                     `🧹 **Factory reset complete.**\n\n` +
                     `Removed **${count}** tracked player(s).\n` +
-                    `🏦 The League Bank was **not** changed.`
+                    `🏦 The League Bank was **not changed**.`
                 );
             }
 
             // =================================================
-            // BANK VIEW
+            // BANK
             // =================================================
 
             if (
@@ -1103,8 +1041,7 @@ client.on(
                 const bank =
                     guildData.bank;
 
-                let itemsText =
-                    "None";
+                let itemsText = "None";
 
                 if (
                     bank.items.length > 0
@@ -1126,13 +1063,15 @@ client.on(
                             )
                             .addFields(
                                 {
-                                    name: "💎 Gems",
+                                    name:
+                                        "💎 Gems",
                                     value:
                                         bank.gems.toLocaleString(),
                                     inline: false
                                 },
                                 {
-                                    name: "📦 Items",
+                                    name:
+                                        "📦 Items",
                                     value:
                                         itemsText,
                                     inline: false
@@ -1176,17 +1115,14 @@ client.on(
                     type === "item" &&
                     !itemName
                 ) {
-
                     return interaction.reply({
                         content:
-                            "❌ You must provide an item name when adding an item.",
+                            "❌ You must provide an item name.",
                         ephemeral: true
                     });
                 }
 
-                if (
-                    type === "gems"
-                ) {
+                if (type === "gems") {
 
                     guildData.bank.gems +=
                         amount;
@@ -1212,7 +1148,7 @@ client.on(
                 } else {
                     guildData.bank.items.push({
                         name: itemName,
-                        amount
+                        amount: amount
                     });
                 }
 
@@ -1257,23 +1193,19 @@ client.on(
                     type === "item" &&
                     !itemName
                 ) {
-
                     return interaction.reply({
                         content:
-                            "❌ You must provide an item name when removing an item.",
+                            "❌ You must provide an item name.",
                         ephemeral: true
                     });
                 }
 
-                if (
-                    type === "gems"
-                ) {
+                if (type === "gems") {
 
                     if (
                         amount >
                         guildData.bank.gems
                     ) {
-
                         return interaction.reply({
                             content:
                                 "❌ The League Bank doesn't have enough gems.",
@@ -1303,7 +1235,6 @@ client.on(
                     !existing ||
                     existing.amount < amount
                 ) {
-
                     return interaction.reply({
                         content:
                             "❌ The League Bank doesn't have enough of that item.",
@@ -1317,7 +1248,6 @@ client.on(
                 if (
                     existing.amount <= 0
                 ) {
-
                     guildData.bank.items =
                         guildData.bank.items.filter(
                             item =>
@@ -1343,16 +1273,15 @@ client.on(
             ) {
 
                 const existing =
-                    getUserOpenRequest(
+                    getOpenRequest(
                         guildData,
                         interaction.user.id
                     );
 
                 if (existing) {
-
                     return interaction.reply({
                         content:
-                            "❌ You already have an open League Bank request. Wait for it to be approved or rejected before making another.",
+                            "❌ You already have an open League Bank request. Wait until it is approved or rejected.",
                         ephemeral: true
                     });
                 }
@@ -1363,7 +1292,7 @@ client.on(
                             "league_bank_request"
                         )
                         .setTitle(
-                            "🏦 League Bank Request"
+                            "League Bank Request"
                         );
 
                 const reason =
@@ -1378,7 +1307,7 @@ client.on(
                             TextInputStyle.Paragraph
                         )
                         .setPlaceholder(
-                            "Why do you need this?"
+                            "Why are you requesting this?"
                         )
                         .setRequired(true)
                         .setMaxLength(1000);
@@ -1395,7 +1324,7 @@ client.on(
                             TextInputStyle.Short
                         )
                         .setPlaceholder(
-                            "Example: 500,000 gems / 2x Huge Cat"
+                            "Example: 500000 gems / 2x Huge Cat"
                         )
                         .setRequired(true)
                         .setMaxLength(200);
@@ -1419,13 +1348,19 @@ client.on(
 
                 modal.addComponents(
                     new ActionRowBuilder()
-                        .addComponents(reason),
+                        .addComponents(
+                            reason
+                        ),
 
                     new ActionRowBuilder()
-                        .addComponents(amount),
+                        .addComponents(
+                            amount
+                        ),
 
                     new ActionRowBuilder()
-                        .addComponents(roblox)
+                        .addComponents(
+                            roblox
+                        )
                 );
 
                 return interaction.showModal(
@@ -1435,15 +1370,13 @@ client.on(
         }
 
         // ====================================================
-        // MODAL SUBMISSIONS
+        // MODALS
         // ====================================================
 
-        if (
-            interaction.isModalSubmit()
-        ) {
+        if (interaction.isModalSubmit()) {
 
             // =================================================
-            // NEW BANK REQUEST
+            // REQUEST FORM
             // =================================================
 
             if (
@@ -1454,7 +1387,7 @@ client.on(
                 if (!interaction.guildId) {
                     return interaction.reply({
                         content:
-                            "❌ This request must be made inside a server.",
+                            "❌ This must be submitted inside a server.",
                         ephemeral: true
                     });
                 }
@@ -1465,7 +1398,7 @@ client.on(
                     );
 
                 const existing =
-                    getUserOpenRequest(
+                    getOpenRequest(
                         guildData,
                         interaction.user.id
                     );
@@ -1498,31 +1431,24 @@ client.on(
 
                 const request = {
                     id: requestId,
-
                     guildId:
                         interaction.guildId,
-
                     channelId:
                         interaction.channelId,
-
                     userId:
                         interaction.user.id,
-
                     username:
                         interaction.user.username,
-
-                    robloxUsername,
-
-                    reason,
-
-                    amount,
-
+                    robloxUsername:
+                        robloxUsername,
+                    reason:
+                        reason,
+                    amount:
+                        amount,
                     status:
                         "pending",
-
                     createdAt:
                         Date.now(),
-
                     ownerIds: []
                 };
 
@@ -1535,7 +1461,8 @@ client.on(
                 await interaction.reply({
                     content:
                         "✅ Your League Bank request has been submitted.\n\n" +
-                        "🏦 An owner has been notified. You can only have **one open request** at a time.",
+                        "🏦 The owners have been notified.\n" +
+                        "You can only have **1 open request** at a time.",
                     ephemeral: true
                 });
 
@@ -1556,10 +1483,9 @@ client.on(
                 if (
                     ownerIds.length === 0
                 ) {
-
                     await interaction.followUp({
                         content:
-                            "⚠️ Your request was saved, but I couldn't DM anyone with the League Bank role.",
+                            "⚠️ No League Bank owners could be DMed. Make sure the role exists and members allow DMs.",
                         ephemeral: true
                     });
                 }
@@ -1568,7 +1494,7 @@ client.on(
             }
 
             // =================================================
-            // REJECTION REASON
+            // REJECTION FORM
             // =================================================
 
             if (
@@ -1583,16 +1509,12 @@ client.on(
                         ""
                     );
 
-                if (!requestId) {
-                    return;
-                }
-
                 let request = null;
                 let guildData = null;
 
                 for (
-                    const [guildId, guild]
-                    of Object.entries(data)
+                    const guild of
+                    Object.values(data)
                 ) {
 
                     if (
@@ -1617,7 +1539,6 @@ client.on(
                     !request ||
                     !guildData
                 ) {
-
                     return interaction.reply({
                         content:
                             "❌ That request no longer exists.",
@@ -1630,7 +1551,6 @@ client.on(
                         interaction.user.id
                     )
                 ) {
-
                     return interaction.reply({
                         content:
                             "❌ You are not authorized to manage this request.",
@@ -1642,7 +1562,6 @@ client.on(
                     request.status !==
                     "pending"
                 ) {
-
                     return interaction.reply({
                         content:
                             "❌ This request has already been handled.",
@@ -1669,7 +1588,7 @@ client.on(
 
                 saveData();
 
-                // DM requester
+                // DM member
                 try {
 
                     const requester =
@@ -1685,14 +1604,13 @@ client.on(
                     );
 
                 } catch (error) {
-
                     console.error(
-                        "Couldn't DM rejected requester:",
+                        "Could not DM rejected user:",
                         error.message
                     );
                 }
 
-                // Ping requester in original channel
+                // Ping in original channel
                 try {
 
                     const guild =
@@ -1706,10 +1624,9 @@ client.on(
                         );
 
                     if (channel) {
-
                         await channel.send({
                             content:
-                                `❌ <@${request.userId}>, your League Bank request was **rejected**.\n\n` +
+                                `❌ <@${request.userId}>, your League Bank request was **rejected**.\n` +
                                 `📝 **Reason:** ${rejectReason}`,
                             allowedMentions: {
                                 users: [
@@ -1720,16 +1637,15 @@ client.on(
                     }
 
                 } catch (error) {
-
                     console.error(
-                        "Couldn't send rejection notification:",
+                        "Could not send rejection notification:",
                         error.message
                     );
                 }
 
                 return interaction.reply({
                     content:
-                        "❌ Request rejected and the member has been notified.",
+                        "❌ Request rejected. The member has been notified.",
                     ephemeral: true
                 });
             }
@@ -1739,9 +1655,7 @@ client.on(
         // BUTTONS
         // ====================================================
 
-        if (
-            interaction.isButton()
-        ) {
+        if (interaction.isButton()) {
 
             // =================================================
             // APPROVE
@@ -1763,8 +1677,8 @@ client.on(
                 let guildData = null;
 
                 for (
-                    const [guildId, guild]
-                    of Object.entries(data)
+                    const guild of
+                    Object.values(data)
                 ) {
 
                     if (
@@ -1790,7 +1704,6 @@ client.on(
                     !request ||
                     !guildData
                 ) {
-
                     return interaction.reply({
                         content:
                             "❌ That request no longer exists.",
@@ -1803,7 +1716,6 @@ client.on(
                         interaction.user.id
                     )
                 ) {
-
                     return interaction.reply({
                         content:
                             "❌ You are not authorized to manage this request.",
@@ -1815,7 +1727,6 @@ client.on(
                     request.status !==
                     "pending"
                 ) {
-
                     return interaction.reply({
                         content:
                             "❌ This request has already been handled.",
@@ -1834,7 +1745,7 @@ client.on(
 
                 saveData();
 
-                // DM requester
+                // DM
                 try {
 
                     const requester =
@@ -1845,19 +1756,18 @@ client.on(
                     await requester.send(
                         `✅ **Your League Bank request was approved!**\n\n` +
                         `🎮 **Roblox User:** ${request.robloxUsername}\n` +
-                        `💰 **Approved amount/items:** ${request.amount}\n\n` +
-                        `📬 Please check your mail soon!`
+                        `💰 **Approved:** ${request.amount}\n\n` +
+                        `📬 **Check your mail soon!**`
                     );
 
                 } catch (error) {
-
                     console.error(
-                        "Couldn't DM approved requester:",
+                        "Could not DM approved user:",
                         error.message
                     );
                 }
 
-                // Ping in original channel
+                // Channel ping
                 try {
 
                     const guild =
@@ -1871,7 +1781,6 @@ client.on(
                         );
 
                     if (channel) {
-
                         await channel.send({
                             content:
                                 `✅ <@${request.userId}>, your League Bank request was **approved**!\n` +
@@ -1885,9 +1794,8 @@ client.on(
                     }
 
                 } catch (error) {
-
                     console.error(
-                        "Couldn't send approval notification:",
+                        "Could not send approval notification:",
                         error.message
                     );
                 }
@@ -1936,10 +1844,7 @@ client.on(
                     }
                 }
 
-                if (
-                    !request
-                ) {
-
+                if (!request) {
                     return interaction.reply({
                         content:
                             "❌ That request no longer exists.",
@@ -1952,7 +1857,6 @@ client.on(
                         interaction.user.id
                     )
                 ) {
-
                     return interaction.reply({
                         content:
                             "❌ You are not authorized to manage this request.",
@@ -1964,7 +1868,6 @@ client.on(
                     request.status !==
                     "pending"
                 ) {
-
                     return interaction.reply({
                         content:
                             "❌ This request has already been handled.",
@@ -1978,7 +1881,7 @@ client.on(
                             `bank_reject_modal_${requestId}`
                         )
                         .setTitle(
-                            "❌ Reject Request"
+                            "Reject Bank Request"
                         );
 
                 const reason =
@@ -1993,14 +1896,16 @@ client.on(
                             TextInputStyle.Paragraph
                         )
                         .setPlaceholder(
-                            "Explain why you're rejecting this request."
+                            "Why are you rejecting this request?"
                         )
                         .setRequired(true)
                         .setMaxLength(1000);
 
                 modal.addComponents(
                     new ActionRowBuilder()
-                        .addComponents(reason)
+                        .addComponents(
+                            reason
+                        )
                 );
 
                 return interaction.showModal(
@@ -2012,7 +1917,7 @@ client.on(
 );
 
 // ============================================================
-// 5-MINUTE TRACKER
+// 5 MINUTE TRACKER
 // ============================================================
 
 async function runTracker() {
@@ -2066,9 +1971,9 @@ async function runTracker() {
                     continue;
                 }
 
-                // First successful check
                 if (
-                    result.gain === null
+                    result.gain ===
+                    null
                 ) {
 
                     console.log(
@@ -2077,10 +1982,6 @@ async function runTracker() {
 
                     continue;
                 }
-
-                // =================================================
-                // NO LP GAIN
-                // =================================================
 
                 if (
                     result.gain <= 0
@@ -2095,21 +1996,13 @@ async function runTracker() {
                         continue;
                     }
 
-                    const mention =
-                        `<@${tracked.discordUserId}>`;
-
                     await channel.send({
                         content:
-                            `${mention}\n\n` +
-
+                            `<@${tracked.discordUserId}>\n\n` +
                             `🚨 **NO LEAGUE POINTS GAINED**\n\n` +
-
                             `🏆 **League:** ${result.leagueName}\n` +
-
                             `📊 **League Rank:** #${result.leagueRank}\n` +
-
                             `⭐ **League Points:** ${result.leaguePoints.toLocaleString()}\n\n` +
-
                             `⏰ No LP gained in the last **5 minutes**.`,
 
                         allowedMentions: {
@@ -2120,13 +2013,13 @@ async function runTracker() {
                     });
 
                     console.log(
-                        `🚨 No LP gain: ${tracked.username}`
+                        `No LP gain: ${tracked.username}`
                     );
 
                 } else {
 
                     console.log(
-                        `✅ ${tracked.username}: +${result.gain} LP`
+                        `${tracked.username}: +${result.gain} LP`
                     );
                 }
 
@@ -2149,7 +2042,7 @@ function startTracker() {
 
     setTimeout(
         runTracker,
-        10_000
+        10000
     );
 
     setInterval(
