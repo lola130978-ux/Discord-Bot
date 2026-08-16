@@ -549,8 +549,8 @@ async function checkPlayer(tracked) {
 
 function rollChestReward() {
     return {
-        type: "titanic",
-        name: "TITANIC"
+        type: "troll",
+        name: " GET TROLLED BOZO L EZ+BAD JEW LMAO"
     };
 }
 
