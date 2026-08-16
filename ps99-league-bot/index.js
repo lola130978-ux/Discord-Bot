@@ -548,51 +548,6 @@ async function checkPlayer(tracked) {
 // ============================================================
 
 function rollChestReward() {
-    const roll =
-        Math.random() * 100;
-
-    if (roll < 99.9) {
-        return {
-            type: "huge",
-            name: "Random Huge"
-        };
-    }
-
-    if (roll < 75) {
-        return {
-            type: "gems",
-            amount: 25_000_000
-        };
-    }
-
-    if (roll < 90) {
-        return {
-            type: "gems",
-            amount: 45_000_000
-        };
-    }
-
-    if (roll < 95) {
-        return {
-            type: "gems",
-            amount: 100_000_000
-        };
-    }
-
-    if (roll < 98) {
-        return {
-            type: "gems",
-            amount: 250_000_000
-        };
-    }
-
-    if (roll < 50) {
-        return {
-            type: "gems",
-            amount: 300_000_000
-        };
-    }
-
     return {
         type: "titanic",
         name: "TITANIC"
