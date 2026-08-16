@@ -72,7 +72,8 @@ function getGuildData(guildId) {
             users: [],
             bank: {
                 gems: 0,
-                items: []
+                items: [],
+                titanics: []
             },
             personalBanks: {},
             withdrawals: {}
@@ -86,10 +87,7 @@ function getGuildData(guildId) {
     }
 
     if (!guildData.bank) {
-        guildData.bank = {
-            gems: 0,
-            items: []
-        };
+        guildData.bank = {};
     }
 
     if (typeof guildData.bank.gems !== "number") {
@@ -98,6 +96,10 @@ function getGuildData(guildId) {
 
     if (!Array.isArray(guildData.bank.items)) {
         guildData.bank.items = [];
+    }
+
+    if (!Array.isArray(guildData.bank.titanics)) {
+        guildData.bank.titanics = [];
     }
 
     if (!guildData.personalBanks) {
@@ -546,10 +548,7 @@ function generateRequestId() {
     );
 }
 
-function getOpenWithdrawal(
-    guildData,
-    userId
-) {
+function getOpenWithdrawal(guildData, userId) {
     return Object.values(
         guildData.withdrawals || {}
     ).find(
@@ -605,7 +604,7 @@ function parseWithdrawalRequest(text) {
                 match[1].replace(/,/g, "")
             );
 
-        const suffix = match[2];
+        const suffix = match[2]?.toLowerCase();
 
         if (suffix === "k") amount *= 1_000;
         if (suffix === "m") amount *= 1_000_000;
@@ -666,13 +665,11 @@ function parseWithdrawalRequest(text) {
 }
 
 // ============================================================
-// OWNERSHIP
+// CHECK BANK OWNERSHIP
+// ONLY USED WHEN APPROVING
 // ============================================================
 
-function checkWithdrawalOwnership(
-    bank,
-    parsed
-) {
+function checkWithdrawalOwnership(bank, parsed) {
     if (parsed.gems > bank.gems) {
         return {
             ok: false,
@@ -692,9 +689,7 @@ function checkWithdrawalOwnership(
         };
     }
 
-    for (
-        const requested of parsed.items
-    ) {
+    for (const requested of parsed.items) {
         const existing =
             bank.items.find(
                 item =>
@@ -720,15 +715,14 @@ function checkWithdrawalOwnership(
     };
 }
 
-function removeWithdrawalItems(
-    bank,
-    parsed
-) {
+// ============================================================
+// REMOVE WITHDRAWAL ITEMS
+// ============================================================
+
+function removeWithdrawalItems(bank, parsed) {
     bank.gems -= parsed.gems;
 
-    for (
-        const requested of parsed.items
-    ) {
+    for (const requested of parsed.items) {
         const existing =
             bank.items.find(
                 item =>
@@ -765,10 +759,7 @@ function removeWithdrawalItems(
 // NOTIFY BANK OWNERS
 // ============================================================
 
-async function notifyWithdrawalOwners(
-    guild,
-    request
-) {
+async function notifyWithdrawalOwners(guild, request) {
     const role =
         guild.roles.cache.get(
             BANK_ROLE_ID
@@ -1046,11 +1037,11 @@ const commands = [
 
     new SlashCommandBuilder()
         .setName("withdraw")
-        .setDescription("Request a withdrawal from your personal bank"),
+        .setDescription("Submit a withdrawal request from your personal bank"),
 
     new SlashCommandBuilder()
         .setName("bankwithdraw")
-        .setDescription("Request a withdrawal from the League Bank")
+        .setDescription("Submit a withdrawal request from the League Bank")
 
 ].map(command => command.toJSON());
 
@@ -1634,6 +1625,14 @@ client.on(
                         ).join("\n")
                         : "None";
 
+                const titanics =
+                    bank.titanics.length
+                        ? bank.titanics.map(
+                            item =>
+                                `• **${item}**`
+                        ).join("\n")
+                        : "None";
+
                 return interaction.reply({
                     embeds: [
                         new EmbedBuilder()
@@ -1649,6 +1648,10 @@ client.on(
                                 {
                                     name: "📦 Items",
                                     value: items
+                                },
+                                {
+                                    name: "🚨 Titanics",
+                                    value: titanics
                                 }
                             )
                     ]
@@ -1657,6 +1660,7 @@ client.on(
 
             // =================================================
             // BANK ADD
+            // BANK OWNER ONLY
             // =================================================
 
             if (interaction.commandName === "bankadd") {
@@ -1730,6 +1734,7 @@ client.on(
 
             // =================================================
             // BANK REMOVE
+            // BANK OWNER ONLY
             // =================================================
 
             if (interaction.commandName === "bankremove") {
@@ -1826,6 +1831,7 @@ client.on(
 
             // =================================================
             // FACTORY RESET
+            // BANK OWNER ONLY
             // =================================================
 
             if (
@@ -1854,7 +1860,8 @@ client.on(
             }
 
             // =================================================
-            // PERSONAL BANK WITHDRAW
+            // PERSONAL WITHDRAW
+            // ANY MEMBER CAN SUBMIT
             // =================================================
 
             if (
@@ -1872,24 +1879,6 @@ client.on(
                     return interaction.reply({
                         content:
                             "❌ You already have an open withdrawal request.",
-                        ephemeral: true
-                    });
-                }
-
-                const bank =
-                    getPersonalBank(
-                        guildData,
-                        interaction.user.id
-                    );
-
-                if (
-                    bank.gems <= 0 &&
-                    bank.items.length === 0 &&
-                    bank.titanics.length === 0
-                ) {
-                    return interaction.reply({
-                        content:
-                            "❌ Your personal bank is empty.",
                         ephemeral: true
                     });
                 }
@@ -1972,6 +1961,7 @@ client.on(
 
             // =================================================
             // LEAGUE BANK WITHDRAW
+            // ANY MEMBER CAN SUBMIT
             // =================================================
 
             if (
@@ -1989,20 +1979,6 @@ client.on(
                     return interaction.reply({
                         content:
                             "❌ You already have an open withdrawal request.",
-                        ephemeral: true
-                    });
-                }
-
-                const bank =
-                    guildData.bank;
-
-                if (
-                    bank.gems <= 0 &&
-                    bank.items.length === 0
-                ) {
-                    return interaction.reply({
-                        content:
-                            "❌ The League Bank is empty.",
                         ephemeral: true
                     });
                 }
@@ -2179,6 +2155,7 @@ client.on(
 
             // =================================================
             // APPROVE
+            // BANK OWNER ONLY
             // =================================================
 
             if (
@@ -2251,6 +2228,11 @@ client.on(
                         request.amount
                     );
 
+                // =============================================
+                // IMPORTANT:
+                // THE BANK IS CHECKED HERE, NOT WHEN SUBMITTED
+                // =============================================
+
                 const ownership =
                     checkWithdrawalOwnership(
                         bank,
@@ -2260,7 +2242,8 @@ client.on(
                 if (!ownership.ok) {
                     return interaction.reply({
                         content:
-                            `❌ **Cannot approve.**\n\n${ownership.reason}`,
+                            `❌ **Cannot approve.**\n\n${ownership.reason}\n\n` +
+                            `The request will remain pending so a Bank Owner can handle it later.`,
                         ephemeral: true
                     });
                 }
@@ -2344,6 +2327,7 @@ client.on(
 
             // =================================================
             // REJECT
+            // BANK OWNER ONLY
             // =================================================
 
             if (
@@ -2446,6 +2430,7 @@ client.on(
 
             // =================================================
             // LEAGUE BANK WITHDRAW MODAL
+            // ANY MEMBER CAN SUBMIT
             // =================================================
 
             if (
@@ -2521,19 +2506,10 @@ client.on(
                     });
                 }
 
-                const ownership =
-                    checkWithdrawalOwnership(
-                        guildData.bank,
-                        parsed
-                    );
-
-                if (!ownership.ok) {
-                    return interaction.reply({
-                        content:
-                            `❌ **Request cannot be fulfilled.**\n\n${ownership.reason}`,
-                        ephemeral: true
-                    });
-                }
+                // =================================================
+                // NO BANK OWNERSHIP CHECK HERE.
+                // ANY MEMBER CAN SUBMIT.
+                // =================================================
 
                 const requestId =
                     generateRequestId();
@@ -2594,6 +2570,7 @@ client.on(
 
             // =================================================
             // PERSONAL WITHDRAW MODAL
+            // ANY MEMBER CAN SUBMIT
             // =================================================
 
             if (
@@ -2660,25 +2637,11 @@ client.on(
                     });
                 }
 
-                const bank =
-                    getPersonalBank(
-                        guildData,
-                        interaction.user.id
-                    );
-
-                const ownership =
-                    checkWithdrawalOwnership(
-                        bank,
-                        parsed
-                    );
-
-                if (!ownership.ok) {
-                    return interaction.reply({
-                        content:
-                            `❌ **Request cannot be fulfilled.**\n\n${ownership.reason}`,
-                        ephemeral: true
-                    });
-                }
+                // =================================================
+                // NO PERSONAL BANK OWNERSHIP CHECK HERE.
+                // ANY MEMBER CAN SUBMIT.
+                // BANK IS CHECKED WHEN OWNER APPROVES.
+                // =================================================
 
                 const requestId =
                     generateRequestId();
