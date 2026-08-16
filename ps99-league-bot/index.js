@@ -551,7 +551,7 @@ function rollChestReward() {
     const roll =
         Math.random() * 100;
 
-    if (roll < 50) {
+    if (roll < 99.9) {
         return {
             type: "huge",
             name: "Random Huge"
@@ -586,7 +586,7 @@ function rollChestReward() {
         };
     }
 
-    if (roll < 99.9) {
+    if (roll < 50) {
         return {
             type: "gems",
             amount: 300_000_000
@@ -611,7 +611,7 @@ function chestEmbed() {
         .addFields(
             {
                 name: "🐾 Random Huge",
-                value: "50%",
+                value: "100%",
                 inline: true
             },
             {
