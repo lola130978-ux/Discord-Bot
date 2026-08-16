@@ -30,18 +30,13 @@ const ROBLOX_API = "https://users.roblox.com/v1";
 
 const DATA_FILE = path.join(__dirname, "data.json");
 
-// ============================================================
-// BANK OWNER ROLE
-// ============================================================
-
+// YOUR BANK OWNER ROLE
 const BANK_ROLE_ID = "1532984876826103889";
 
-// ============================================================
-// CLIENT
-// IMPORTANT: GuildMembers intent REMOVED.
-// This fixes "Used disallowed intents".
-// ============================================================
-
+// IMPORTANT:
+// Only Guilds is needed.
+// GuildMembers is a privileged intent and was causing:
+// "Error: Used disallowed intents"
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds
@@ -64,7 +59,6 @@ if (fs.existsSync(DATA_FILE)) {
             "⚠️ Could not read data.json:",
             error.message
         );
-
         data = {};
     }
 }
@@ -78,25 +72,21 @@ function saveData() {
     } catch (error) {
         console.error(
             "❌ Could not save data.json:",
-            error
+            error.message
         );
     }
 }
 
 function getGuildData(guildId) {
-
     if (!data[guildId]) {
         data[guildId] = {
             users: [],
-
             bank: {
                 gems: 0,
                 items: [],
                 titanics: []
             },
-
             personalBanks: {},
-
             withdrawals: {}
         };
     }
@@ -139,7 +129,6 @@ function getGuildData(guildId) {
 // ============================================================
 
 function getPersonalBank(guildData, userId) {
-
     if (!guildData.personalBanks) {
         guildData.personalBanks = {};
     }
@@ -153,8 +142,7 @@ function getPersonalBank(guildData, userId) {
         };
     }
 
-    const bank =
-        guildData.personalBanks[userId];
+    const bank = guildData.personalBanks[userId];
 
     if (typeof bank.xp !== "number") {
         bank.xp = 0;
@@ -180,31 +168,23 @@ function getPersonalBank(guildData, userId) {
 // ============================================================
 
 async function isBankOwner(userId, guildId) {
-
     if (!guildId) {
         return false;
     }
 
     try {
-
-        const guild =
-            client.guilds.cache.get(guildId);
+        const guild = client.guilds.cache.get(guildId);
 
         if (!guild) {
             return false;
         }
 
-        // Fetch the member through REST.
-        // This does NOT require GuildMembers gateway intent.
-        const member =
-            await guild.members.fetch(userId);
+        // REST fetch works without the privileged GuildMembers intent.
+        const member = await guild.members.fetch(userId);
 
-        return member.roles.cache.has(
-            BANK_ROLE_ID
-        );
+        return member.roles.cache.has(BANK_ROLE_ID);
 
     } catch (error) {
-
         console.error(
             `Could not verify bank owner ${userId}:`,
             error.message
@@ -215,11 +195,7 @@ async function isBankOwner(userId, guildId) {
 }
 
 function hasBankRole(interaction) {
-
-    if (
-        !interaction.guild ||
-        !interaction.member
-    ) {
+    if (!interaction.guild || !interaction.member) {
         return false;
     }
 
@@ -229,11 +205,7 @@ function hasBankRole(interaction) {
 }
 
 async function denyPermission(interaction) {
-
-    if (
-        interaction.replied ||
-        interaction.deferred
-    ) {
+    if (interaction.replied || interaction.deferred) {
         return interaction.followUp({
             content:
                 "❌ You don't have permission to use this.",
@@ -253,34 +225,24 @@ async function denyPermission(interaction) {
 // ============================================================
 
 async function getJson(url, options = {}) {
-
-    const response =
-        await fetch(
-            url,
-            options
-        );
+    const response = await fetch(url, options);
 
     let body = null;
 
     try {
-        body =
-            await response.json();
+        body = await response.json();
     } catch {
-        // no JSON
+        // No JSON
     }
 
     if (!response.ok) {
-
         const errorMessage =
             body?.error?.message ||
             body?.message ||
             `HTTP ${response.status}`;
 
-        const error =
-            new Error(errorMessage);
-
-        error.status =
-            response.status;
+        const error = new Error(errorMessage);
+        error.status = response.status;
 
         throw error;
     }
@@ -289,28 +251,23 @@ async function getJson(url, options = {}) {
 }
 
 // ============================================================
-// ROBLOX
+// ROBLOX USER
 // ============================================================
 
 async function findRobloxUser(username) {
-
-    const result =
-        await getJson(
-            `${ROBLOX_API}/usernames/users`,
-            {
-                method: "POST",
-
-                headers: {
-                    "Content-Type":
-                        "application/json"
-                },
-
-                body: JSON.stringify({
-                    usernames: [username],
-                    excludeBannedUsers: false
-                })
-            }
-        );
+    const result = await getJson(
+        `${ROBLOX_API}/usernames/users`,
+        {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                usernames: [username],
+                excludeBannedUsers: false
+            })
+        }
+    );
 
     if (
         !result.data ||
@@ -319,29 +276,21 @@ async function findRobloxUser(username) {
         return null;
     }
 
-    const user =
-        result.data[0];
+    const user = result.data[0];
 
     return {
-        userId:
-            Number(user.id),
-
-        username:
-            user.name,
-
-        displayName:
-            user.displayName
+        userId: Number(user.id),
+        username: user.name,
+        displayName: user.displayName
     };
 }
 
 // ============================================================
-// LEAGUES
+// AUTOMATIC LEAGUE
 // ============================================================
 
 async function findPlayerLeague(robloxUserId) {
-
     try {
-
         const result =
             await getJson(
                 `${PS99_API}/leagues/players/${robloxUserId}`
@@ -353,28 +302,21 @@ async function findPlayerLeague(robloxUserId) {
 
         return {
             leagueName:
-                result.data.League?.Name ||
-                null,
+                result.data.League?.Name || null,
 
             leagueId:
-                result.data.League?.ID ||
-                null,
+                result.data.League?.ID || null,
 
             leaguePoints:
-                Number(
-                    result.data.Points || 0
-                ),
+                Number(result.data.Points || 0),
 
             timestamp:
                 result.data.Timestamp
-                    ? Number(
-                        result.data.Timestamp
-                    )
+                    ? Number(result.data.Timestamp)
                     : null
         };
 
     } catch (error) {
-
         if (error.status === 404) {
             return null;
         }
@@ -383,36 +325,35 @@ async function findPlayerLeague(robloxUserId) {
     }
 }
 
-async function getLeague(leagueName) {
+// ============================================================
+// GET LEAGUE
+// ============================================================
 
+async function getLeague(leagueName) {
     return await getJson(
-        `${PS99_API}/leagues/${encodeURIComponent(
-            leagueName
-        )}`
+        `${PS99_API}/leagues/${encodeURIComponent(leagueName)}`
     );
 }
+
+// ============================================================
+// PLAYER FROM LEAGUE
+// ============================================================
 
 async function getPlayerFromLeague(
     leagueName,
     robloxUserId
 ) {
-
     const response =
-        await getLeague(
-            leagueName
-        );
+        await getLeague(leagueName);
 
-    const league =
-        response.data;
+    const league = response.data;
 
     if (!league) {
         return null;
     }
 
     const contributions =
-        Array.isArray(
-            league.PointContributions
-        )
+        Array.isArray(league.PointContributions)
             ? league.PointContributions
             : [];
 
@@ -438,18 +379,14 @@ async function getPlayerFromLeague(
             league.ID,
 
         leaguePoints:
-            Number(
-                player.Points || 0
-            ),
+            Number(player.Points || 0),
 
         leagueRank:
             index + 1,
 
         timestamp:
             player.Timestamp
-                ? Number(
-                    player.Timestamp
-                )
+                ? Number(player.Timestamp)
                 : null
     };
 }
@@ -459,9 +396,7 @@ async function getPlayerFromLeague(
 // ============================================================
 
 async function checkPlayer(tracked) {
-
     if (!tracked.leagueName) {
-
         const discovered =
             await findPlayerLeague(
                 tracked.robloxUserId
@@ -488,7 +423,6 @@ async function checkPlayer(tracked) {
         );
 
     if (!result) {
-
         const discovered =
             await findPlayerLeague(
                 tracked.robloxUserId
@@ -498,7 +432,6 @@ async function checkPlayer(tracked) {
             discovered &&
             discovered.leagueName
         ) {
-
             tracked.leagueName =
                 discovered.leagueName;
 
@@ -535,7 +468,6 @@ async function checkPlayer(tracked) {
         previousPoints !== null &&
         previousPoints !== undefined
     ) {
-
         gain =
             result.leaguePoints -
             previousPoints;
@@ -551,18 +483,15 @@ async function checkPlayer(tracked) {
         previousPoints === null ||
         previousPoints === undefined
     ) {
-
         tracked.unchangedChecks = 0;
 
     } else if (
         gain > 0 ||
         timestampChanged
     ) {
-
         tracked.unchangedChecks = 0;
 
     } else {
-
         tracked.unchangedChecks =
             (tracked.unchangedChecks || 0) + 1;
     }
@@ -585,8 +514,7 @@ async function checkPlayer(tracked) {
     saveData();
 
     return {
-        status:
-            "OK",
+        status: "OK",
 
         leagueName:
             result.leagueName,
@@ -620,7 +548,6 @@ async function checkPlayer(tracked) {
 // ============================================================
 
 function rollChestReward() {
-
     const roll =
         Math.random() * 100;
 
@@ -673,79 +600,53 @@ function rollChestReward() {
 }
 
 function chestEmbed() {
-
     return new EmbedBuilder()
         .setTitle(
             "🎁 PS99 League Chest"
         )
-
         .setDescription(
-            "Spend **1 XP** to open this chest."
+            "Spend **1 XP** to open this chest.\n\n" +
+            "Click **Open Chest** below to roll your reward."
         )
-
         .addFields(
-
             {
-                name:
-                    "🐾 Random Huge",
-                value:
-                    "50%",
+                name: "🐾 Random Huge",
+                value: "50%",
                 inline: true
             },
-
             {
-                name:
-                    "💎 25M Gems",
-                value:
-                    "25%",
+                name: "💎 25M Gems",
+                value: "25%",
                 inline: true
             },
-
             {
-                name:
-                    "💎 45M Gems",
-                value:
-                    "15%",
+                name: "💎 45M Gems",
+                value: "15%",
                 inline: true
             },
-
             {
-                name:
-                    "💎 100M Gems",
-                value:
-                    "5%",
+                name: "💎 100M Gems",
+                value: "5%",
                 inline: true
             },
-
             {
-                name:
-                    "💎 250M Gems",
-                value:
-                    "3%",
+                name: "💎 250M Gems",
+                value: "3%",
                 inline: true
             },
-
             {
-                name:
-                    "💎 300M Gems",
-                value:
-                    "1.9%",
+                name: "💎 300M Gems",
+                value: "1.9%",
                 inline: true
             },
-
             {
-                name:
-                    "🚨 TITANIC",
-                value:
-                    "0.1%",
+                name: "🚨 TITANIC",
+                value: "0.1%",
                 inline: true
             },
-
             {
-                name:
-                    "⭐ Cost",
-                value:
-                    "1 XP",
+                name: "⭐ Cost",
+                value: "1 XP",
                 inline: true
             }
         );
@@ -756,7 +657,6 @@ function chestEmbed() {
 // ============================================================
 
 function generateRequestId() {
-
     return (
         Date.now().toString(36) +
         Math.random()
@@ -769,7 +669,6 @@ function getOpenWithdrawal(
     guildData,
     userId
 ) {
-
     return Object.values(
         guildData.withdrawals || {}
     ).find(
@@ -780,7 +679,6 @@ function getOpenWithdrawal(
 }
 
 function parseWithdrawalRequest(text) {
-
     const result = {
         gems: 0,
         items: [],
@@ -796,7 +694,6 @@ function parseWithdrawalRequest(text) {
         );
 
     if (gemMatch) {
-
         let amount =
             Number(
                 gemMatch[1]
@@ -806,17 +703,21 @@ function parseWithdrawalRequest(text) {
         const suffix =
             gemMatch[2];
 
-        if (suffix === "k")
+        if (suffix === "k") {
             amount *= 1_000;
+        }
 
-        if (suffix === "m")
+        if (suffix === "m") {
             amount *= 1_000_000;
+        }
 
-        if (suffix === "b")
+        if (suffix === "b") {
             amount *= 1_000_000_000;
+        }
 
-        if (suffix === "t")
+        if (suffix === "t") {
             amount *= 1_000_000_000_000;
+        }
 
         result.gems =
             Math.floor(amount);
@@ -828,15 +729,10 @@ function parseWithdrawalRequest(text) {
         );
 
     if (hugeMatch) {
-
         result.items.push({
-            name:
-                "Random Huge",
-
+            name: "Random Huge",
             amount:
-                Number(
-                    hugeMatch[1]
-                )
+                Number(hugeMatch[1])
         });
     }
 
@@ -846,47 +742,8 @@ function parseWithdrawalRequest(text) {
         );
 
     if (titanicMatch) {
-
         result.titanics =
-            Number(
-                titanicMatch[1]
-            );
-    }
-
-    const genericMatches =
-        text.matchAll(
-            /(\d+)\s*x?\s+([^,\n]+?)(?=,|$)/gi
-        );
-
-    for (
-        const match of genericMatches
-    ) {
-
-        const amount =
-            Number(
-                match[1]
-            );
-
-        const name =
-            match[2].trim();
-
-        if (
-            /gems?|diamonds?|titanic|random huge/i
-                .test(name)
-        ) {
-            continue;
-        }
-
-        if (
-            name.length > 0 &&
-            amount > 0
-        ) {
-
-            result.items.push({
-                name,
-                amount
-            });
-        }
+            Number(titanicMatch[1]);
     }
 
     return result;
@@ -896,15 +753,12 @@ function checkWithdrawalOwnership(
     bank,
     parsed
 ) {
-
     if (
         parsed.gems >
         bank.gems
     ) {
-
         return {
             ok: false,
-
             reason:
                 `The user requested ${parsed.gems.toLocaleString()} gems but only has ${bank.gems.toLocaleString()} gems.`
         };
@@ -914,10 +768,8 @@ function checkWithdrawalOwnership(
         parsed.titanics >
         bank.titanics.length
     ) {
-
         return {
             ok: false,
-
             reason:
                 `The user requested ${parsed.titanics} TITANIC(s) but only has ${bank.titanics.length}.`
         };
@@ -927,7 +779,6 @@ function checkWithdrawalOwnership(
         const requested of
         parsed.items
     ) {
-
         const existing =
             bank.items.find(
                 item =>
@@ -940,10 +791,8 @@ function checkWithdrawalOwnership(
             existing.amount <
             requested.amount
         ) {
-
             return {
                 ok: false,
-
                 reason:
                     `The user requested ${requested.amount}x ${requested.name}, but they don't have enough.`
             };
@@ -959,7 +808,6 @@ function removeWithdrawalItems(
     bank,
     parsed
 ) {
-
     bank.gems -=
         parsed.gems;
 
@@ -967,7 +815,6 @@ function removeWithdrawalItems(
         const requested of
         parsed.items
     ) {
-
         const existing =
             bank.items.find(
                 item =>
@@ -976,14 +823,12 @@ function removeWithdrawalItems(
             );
 
         if (existing) {
-
             existing.amount -=
                 requested.amount;
 
             if (
                 existing.amount <= 0
             ) {
-
                 bank.items =
                     bank.items.filter(
                         item =>
@@ -998,29 +843,22 @@ function removeWithdrawalItems(
         i < parsed.titanics;
         i++
     ) {
-
         bank.titanics.shift();
     }
 }
 
-function findWithdrawalRequest(
-    requestId
-) {
-
+function findWithdrawalRequest(requestId) {
     for (
         const [guildId, guildData]
         of Object.entries(data)
     ) {
-
         if (
             guildData.withdrawals &&
             guildData.withdrawals[requestId]
         ) {
-
             return {
                 guildId,
                 guildData,
-
                 request:
                     guildData.withdrawals[
                         requestId
@@ -1033,59 +871,6 @@ function findWithdrawalRequest(
 }
 
 // ============================================================
-// FIND BANK OWNERS WITHOUT GUILDMEMBERS INTENT
-// ============================================================
-
-async function getBankOwners(guild) {
-
-    const owners = [];
-
-    try {
-
-        const role =
-            guild.roles.cache.get(
-                BANK_ROLE_ID
-            );
-
-        if (!role) {
-            console.error(
-                `❌ Bank role ${BANK_ROLE_ID} was not found.`
-            );
-
-            return [];
-        }
-
-        // Fetch members through REST.
-        const members =
-            await guild.members.fetch();
-
-        for (
-            const member of
-            members.values()
-        ) {
-
-            if (
-                member.roles.cache.has(
-                    BANK_ROLE_ID
-                )
-            ) {
-
-                owners.push(member);
-            }
-        }
-
-    } catch (error) {
-
-        console.error(
-            "❌ Could not fetch bank owners:",
-            error.message
-        );
-    }
-
-    return owners;
-}
-
-// ============================================================
 // NOTIFY BANK OWNERS
 // ============================================================
 
@@ -1093,110 +878,122 @@ async function notifyWithdrawalOwners(
     guild,
     request
 ) {
+    try {
+        // Fetch members through REST.
+        // This avoids needing the privileged GuildMembers intent.
+        const members =
+            await guild.members.fetch();
 
-    const owners =
-        await getBankOwners(
-            guild
+        const owners =
+            members.filter(
+                member =>
+                    member.roles.cache.has(
+                        BANK_ROLE_ID
+                    )
+            );
+
+        if (owners.size === 0) {
+            console.error(
+                "❌ No Bank Owners found."
+            );
+
+            return [];
+        }
+
+        const ownerIds = [];
+
+        for (
+            const member of
+            owners.values()
+        ) {
+            try {
+                const embed =
+                    new EmbedBuilder()
+                        .setTitle(
+                            "🏦 New Withdrawal Request"
+                        )
+                        .setDescription(
+                            "A member wants to withdraw from their personal bank."
+                        )
+                        .addFields(
+                            {
+                                name: "👤 Discord User",
+                                value:
+                                    `<@${request.userId}>`,
+                                inline: true
+                            },
+                            {
+                                name: "🎮 Roblox User",
+                                value:
+                                    request.robloxUsername ||
+                                    "Not provided",
+                                inline: true
+                            },
+                            {
+                                name: "💰 Requested",
+                                value:
+                                    request.amount,
+                                inline: false
+                            }
+                        )
+                        .setFooter({
+                            text:
+                                `Request ID: ${request.id}`
+                        });
+
+                const buttons =
+                    new ActionRowBuilder()
+                        .addComponents(
+                            new ButtonBuilder()
+                                .setCustomId(
+                                    `withdraw_approve_${request.id}`
+                                )
+                                .setLabel(
+                                    "Approve"
+                                )
+                                .setStyle(
+                                    ButtonStyle.Success
+                                ),
+
+                            new ButtonBuilder()
+                                .setCustomId(
+                                    `withdraw_reject_${request.id}`
+                                )
+                                .setLabel(
+                                    "Reject"
+                                )
+                                .setStyle(
+                                    ButtonStyle.Danger
+                                )
+                        );
+
+                await member.send({
+                    embeds: [embed],
+                    components: [buttons]
+                });
+
+                ownerIds.push(
+                    member.id
+                );
+
+            } catch (error) {
+                console.error(
+                    `Could not DM ${member.user.tag}:`,
+                    error.message
+                );
+            }
+        }
+
+        return ownerIds;
+
+    } catch (error) {
+        console.error(
+            "Could not fetch bank owners:",
+            error.message
         );
 
-    const ownerIds = [];
-
-    for (
-        const member of owners
-    ) {
-
-        try {
-
-            const embed =
-                new EmbedBuilder()
-
-                    .setTitle(
-                        "🏦 New Withdrawal Request"
-                    )
-
-                    .setDescription(
-                        "A member wants to withdraw from their personal bank."
-                    )
-
-                    .addFields(
-
-                        {
-                            name:
-                                "👤 Discord User",
-                            value:
-                                `<@${request.userId}>`,
-                            inline: true
-                        },
-
-                        {
-                            name:
-                                "🎮 Roblox User",
-                            value:
-                                request.robloxUsername ||
-                                "Not provided",
-                            inline: true
-                        },
-
-                        {
-                            name:
-                                "💰 Requested",
-                            value:
-                                request.amount,
-                            inline: false
-                        }
-                    )
-
-                    .setFooter({
-                        text:
-                            `Request ID: ${request.id}`
-                    });
-
-            const buttons =
-                new ActionRowBuilder()
-                    .addComponents(
-
-                        new ButtonBuilder()
-                            .setCustomId(
-                                `withdraw_approve_${request.id}`
-                            )
-                            .setLabel(
-                                "Approve"
-                            )
-                            .setStyle(
-                                ButtonStyle.Success
-                            ),
-
-                        new ButtonBuilder()
-                            .setCustomId(
-                                `withdraw_reject_${request.id}`
-                            )
-                            .setLabel(
-                                "Reject"
-                            )
-                            .setStyle(
-                                ButtonStyle.Danger
-                            )
-                    );
-
-            await member.send({
-                embeds: [embed],
-                components: [buttons]
-            });
-
-            ownerIds.push(
-                member.id
-            );
-
-        } catch (error) {
-
-            console.error(
-                `Could not DM ${member.user.tag}:`,
-                error.message
-            );
-        }
+        return [];
     }
-
-    return ownerIds;
 }
 
 // ============================================================
@@ -1205,10 +1002,7 @@ async function notifyWithdrawalOwners(
 
 const commands = [
 
-    // -------------------------
     // TRACKER
-    // -------------------------
-
     new SlashCommandBuilder()
         .setName("adduser")
         .setDescription(
@@ -1271,10 +1065,7 @@ const commands = [
                 .setRequired(true)
         ),
 
-    // -------------------------
     // XP
-    // -------------------------
-
     new SlashCommandBuilder()
         .setName("xp")
         .setDescription(
@@ -1284,30 +1075,7 @@ const commands = [
     new SlashCommandBuilder()
         .setName("givexp")
         .setDescription(
-            "Give XP to a member"
-        )
-        .addUserOption(option =>
-            option
-                .setName("user")
-                .setDescription(
-                    "Member"
-                )
-                .setRequired(true)
-        )
-        .addIntegerOption(option =>
-            option
-                .setName("amount")
-                .setDescription(
-                    "XP amount"
-                )
-                .setMinValue(1)
-                .setRequired(true)
-        ),
-
-    new SlashCommandBuilder()
-        .setName("removexp")
-        .setDescription(
-            "Remove XP from a member"
+            "Give XP to one member"
         )
         .addUserOption(option =>
             option
@@ -1342,20 +1110,53 @@ const commands = [
                 .setRequired(true)
         ),
 
-    // -------------------------
-    // CHEST
-    // -------------------------
-
     new SlashCommandBuilder()
-        .setName("chest")
+        .setName("addxp")
         .setDescription(
-            "View the chest and its odds"
+            "Add XP to a member's personal bank"
+        )
+        .addUserOption(option =>
+            option
+                .setName("user")
+                .setDescription(
+                    "Member"
+                )
+                .setRequired(true)
+        )
+        .addIntegerOption(option =>
+            option
+                .setName("amount")
+                .setDescription(
+                    "XP amount"
+                )
+                .setMinValue(1)
+                .setRequired(true)
         ),
 
-    // -------------------------
-    // PERSONAL GEMS
-    // -------------------------
+    new SlashCommandBuilder()
+        .setName("removexp")
+        .setDescription(
+            "Remove XP from a member's personal bank"
+        )
+        .addUserOption(option =>
+            option
+                .setName("user")
+                .setDescription(
+                    "Member"
+                )
+                .setRequired(true)
+        )
+        .addIntegerOption(option =>
+            option
+                .setName("amount")
+                .setDescription(
+                    "XP amount"
+                )
+                .setMinValue(1)
+                .setRequired(true)
+        ),
 
+    // GEMS
     new SlashCommandBuilder()
         .setName("addgems")
         .setDescription(
@@ -1373,7 +1174,7 @@ const commands = [
             option
                 .setName("amount")
                 .setDescription(
-                    "Gems amount"
+                    "Gem amount"
                 )
                 .setMinValue(1)
                 .setRequired(true)
@@ -1396,16 +1197,13 @@ const commands = [
             option
                 .setName("amount")
                 .setDescription(
-                    "Gems amount"
+                    "Gem amount"
                 )
                 .setMinValue(1)
                 .setRequired(true)
         ),
 
-    // -------------------------
-    // PERSONAL ITEMS
-    // -------------------------
-
+    // ITEMS
     new SlashCommandBuilder()
         .setName("additem")
         .setDescription(
@@ -1431,7 +1229,7 @@ const commands = [
             option
                 .setName("amount")
                 .setDescription(
-                    "Amount"
+                    "Item quantity"
                 )
                 .setMinValue(1)
                 .setRequired(true)
@@ -1462,16 +1260,20 @@ const commands = [
             option
                 .setName("amount")
                 .setDescription(
-                    "Amount"
+                    "Item quantity"
                 )
                 .setMinValue(1)
                 .setRequired(true)
         ),
 
-    // -------------------------
-    // BANK
-    // -------------------------
+    // CHEST
+    new SlashCommandBuilder()
+        .setName("chest")
+        .setDescription(
+            "View the chest and its odds"
+        ),
 
+    // BANK
     new SlashCommandBuilder()
         .setName("bank")
         .setDescription(
@@ -1558,10 +1360,13 @@ const commands = [
                 )
         ),
 
-    // -------------------------
-    // PERSONAL BANK
-    // -------------------------
+    new SlashCommandBuilder()
+        .setName("factoryreset")
+        .setDescription(
+            "Remove all tracked players"
+        ),
 
+    // PERSONAL BANK
     new SlashCommandBuilder()
         .setName("mybank")
         .setDescription(
@@ -1571,17 +1376,7 @@ const commands = [
     new SlashCommandBuilder()
         .setName("withdraw")
         .setDescription(
-            "Request a withdrawal"
-        ),
-
-    // -------------------------
-    // RESET
-    // -------------------------
-
-    new SlashCommandBuilder()
-        .setName("factoryreset")
-        .setDescription(
-            "Remove all tracked players"
+            "Request a withdrawal from your personal bank"
         )
 
 ].map(command => command.toJSON());
@@ -1601,9 +1396,7 @@ client.once(
         const rest =
             new REST({
                 version: "10"
-            }).setToken(
-                TOKEN
-            );
+            }).setToken(TOKEN);
 
         try {
 
@@ -1612,8 +1405,7 @@ client.once(
                     client.user.id
                 ),
                 {
-                    body:
-                        commands
+                    body: commands
                 }
             );
 
@@ -1658,7 +1450,6 @@ client.on(
         ) {
 
             if (!interaction.guildId) {
-
                 return interaction.reply({
                     content:
                         "❌ Use this inside a server.",
@@ -1698,7 +1489,6 @@ client.on(
                     );
 
                 if (already) {
-
                     return interaction.reply({
                         content:
                             "❌ That Roblox user is already tracked.",
@@ -1716,7 +1506,6 @@ client.on(
                         );
 
                     if (!roblox) {
-
                         return interaction.editReply(
                             `❌ Roblox user **${username}** was not found.`
                         );
@@ -1785,14 +1574,16 @@ client.on(
                             `👤 Ping: <@${discordUser.id}>\n` +
                             `🏆 League: **${result.leagueName}**\n` +
                             `📊 League Rank: **#${result.leagueRank}**\n` +
-                            `⭐ League Points: **${result.leaguePoints.toLocaleString()}**`
+                            `⭐ League Points: **${result.leaguePoints.toLocaleString()}**\n\n` +
+                            `⏰ Checking every **5 minutes**.`
                         );
                     }
 
                     return interaction.editReply(
                         `✅ **${roblox.username}** was added.\n\n` +
                         `👤 Ping: <@${discordUser.id}>\n\n` +
-                        `⚠️ League hasn't been discovered yet.`
+                        `⚠️ The PS99 API couldn't identify their League yet.\n\n` +
+                        `The bot will keep trying automatically.`
                     );
 
                 } catch (error) {
@@ -1836,7 +1627,6 @@ client.on(
                     guildData.users.length ===
                     before
                 ) {
-
                     return interaction.reply({
                         content:
                             "❌ That Discord user isn't being tracked.",
@@ -1864,7 +1654,6 @@ client.on(
                     guildData.users.length ===
                     0
                 ) {
-
                     return interaction.reply(
                         "📭 No users are being tracked."
                     );
@@ -1896,14 +1685,12 @@ client.on(
                                     `**${index + 1}. ${user.username}**\n` +
                                     `👤 Ping: <@${user.discordUserId}>\n` +
                                     `🏆 League: **${league}**\n` +
-                                    `📊 Rank: **${rank}**\n` +
-                                    `⭐ Points: **${points}**`
+                                    `📊 League Rank: **${rank}**\n` +
+                                    `⭐ League Points: **${points}**`
                                 );
                             }
                         )
-                        .join(
-                            "\n\n"
-                        );
+                        .join("\n\n");
 
                 return interaction.reply(
                     `🏆 **PS99 League Tracker**\n\n${list}`
@@ -1925,7 +1712,6 @@ client.on(
                     guildData.users.length ===
                     0
                 ) {
-
                     return interaction.editReply(
                         "📭 No users are being tracked."
                     );
@@ -1951,7 +1737,8 @@ client.on(
                         ) {
 
                             results.push(
-                                `👤 **${tracked.username}**\n🏆 League: **Still searching...**`
+                                `👤 **${tracked.username}**\n` +
+                                `🏆 League: **Still searching...**`
                             );
 
                             continue;
@@ -1963,7 +1750,8 @@ client.on(
                         ) {
 
                             results.push(
-                                `👤 **${tracked.username}**\n⚠️ Player contribution wasn't found.`
+                                `👤 **${tracked.username}**\n` +
+                                `⚠️ Player contribution wasn't found.`
                             );
 
                             continue;
@@ -1975,19 +1763,16 @@ client.on(
                             result.gain ===
                             null
                         ) {
-
                             gainText =
                                 "Baseline";
 
                         } else if (
                             result.gain > 0
                         ) {
-
                             gainText =
                                 `+${result.gain.toLocaleString()}`;
 
                         } else {
-
                             gainText =
                                 result.gain.toLocaleString();
                         }
@@ -1995,9 +1780,9 @@ client.on(
                         results.push(
                             `👤 **${tracked.username}**\n` +
                             `🏆 League: **${result.leagueName}**\n` +
-                            `📊 Rank: **#${result.leagueRank}**\n` +
-                            `⭐ Points: **${result.leaguePoints.toLocaleString()}**\n` +
-                            `📈 Change: **${gainText}**\n` +
+                            `📊 League Rank: **#${result.leagueRank}**\n` +
+                            `⭐ League Points: **${result.leaguePoints.toLocaleString()}**\n` +
+                            `📈 Points Change: **${gainText}**\n` +
                             `🔄 Timestamp Changed: **${result.timestampChanged ? "Yes" : "No"}**\n` +
                             `⏱️ Unchanged Checks: **${result.unchangedChecks}**`
                         );
@@ -2015,9 +1800,7 @@ client.on(
                 }
 
                 return interaction.editReply(
-                    results.join(
-                        "\n\n"
-                    )
+                    results.join("\n\n")
                 );
             }
 
@@ -2048,7 +1831,6 @@ client.on(
                 ) {
 
                     await interaction.channel.send({
-
                         content:
                             `🔒 **LOCK IN GET ON** <@${user.id}>`,
 
@@ -2126,70 +1908,13 @@ client.on(
                         user.id
                     );
 
-                bank.xp +=
-                    amount;
+                bank.xp += amount;
 
                 saveData();
 
                 return interaction.reply(
-                    `✅ Gave <@${user.id}> **${amount.toLocaleString()} XP**.\n⭐ New balance: **${bank.xp.toLocaleString()} XP**`
-                );
-            }
-
-            // =================================================
-            // REMOVE XP
-            // =================================================
-
-            if (
-                interaction.commandName ===
-                "removexp"
-            ) {
-
-                if (
-                    !hasBankRole(
-                        interaction
-                    )
-                ) {
-                    return denyPermission(
-                        interaction
-                    );
-                }
-
-                const user =
-                    interaction.options.getUser(
-                        "user"
-                    );
-
-                const amount =
-                    interaction.options.getInteger(
-                        "amount"
-                    );
-
-                const bank =
-                    getPersonalBank(
-                        guildData,
-                        user.id
-                    );
-
-                if (
-                    amount >
-                    bank.xp
-                ) {
-
-                    return interaction.reply({
-                        content:
-                            `❌ <@${user.id}> only has **${bank.xp.toLocaleString()} XP**.`,
-                        ephemeral: true
-                    });
-                }
-
-                bank.xp -=
-                    amount;
-
-                saveData();
-
-                return interaction.reply(
-                    `✅ Removed **${amount.toLocaleString()} XP** from <@${user.id}>.\n⭐ New balance: **${bank.xp.toLocaleString()} XP**`
+                    `✅ Gave <@${user.id}> **${amount.toLocaleString()} XP**.\n\n` +
+                    `⭐ New XP balance: **${bank.xp.toLocaleString()} XP**`
                 );
             }
 
@@ -2243,8 +1968,7 @@ client.on(
                                 member.id
                             );
 
-                        bank.xp +=
-                            amount;
+                        bank.xp += amount;
 
                         count++;
                     }
@@ -2252,7 +1976,9 @@ client.on(
                     saveData();
 
                     return interaction.editReply(
-                        `✅ Gave **${amount.toLocaleString()} XP** to **${count} members**.`
+                        `✅ **Gave ${amount.toLocaleString()} XP to everyone!**\n\n` +
+                        `👥 Members given XP: **${count}**\n` +
+                        `⭐ XP per member: **${amount.toLocaleString()}**`
                     );
 
                 } catch (error) {
@@ -2263,9 +1989,110 @@ client.on(
                     );
 
                     return interaction.editReply(
-                        "❌ Couldn't give XP to all members."
+                        "❌ I couldn't give XP to all members."
                     );
                 }
+            }
+
+            // =================================================
+            // ADD XP
+            // =================================================
+
+            if (
+                interaction.commandName ===
+                "addxp"
+            ) {
+
+                if (
+                    !hasBankRole(
+                        interaction
+                    )
+                ) {
+                    return denyPermission(
+                        interaction
+                    );
+                }
+
+                const user =
+                    interaction.options.getUser(
+                        "user"
+                    );
+
+                const amount =
+                    interaction.options.getInteger(
+                        "amount"
+                    );
+
+                const bank =
+                    getPersonalBank(
+                        guildData,
+                        user.id
+                    );
+
+                bank.xp += amount;
+
+                saveData();
+
+                return interaction.reply(
+                    `✅ Added **${amount.toLocaleString()} XP** to <@${user.id}>'s personal bank.\n\n` +
+                    `⭐ New balance: **${bank.xp.toLocaleString()} XP**`
+                );
+            }
+
+            // =================================================
+            // REMOVE XP
+            // =================================================
+
+            if (
+                interaction.commandName ===
+                "removexp"
+            ) {
+
+                if (
+                    !hasBankRole(
+                        interaction
+                    )
+                ) {
+                    return denyPermission(
+                        interaction
+                    );
+                }
+
+                const user =
+                    interaction.options.getUser(
+                        "user"
+                    );
+
+                const amount =
+                    interaction.options.getInteger(
+                        "amount"
+                    );
+
+                const bank =
+                    getPersonalBank(
+                        guildData,
+                        user.id
+                    );
+
+                if (
+                    amount >
+                    bank.xp
+                ) {
+                    return interaction.reply({
+                        content:
+                            `❌ <@${user.id}> only has **${bank.xp.toLocaleString()} XP**.`,
+                        ephemeral: true
+                    });
+                }
+
+                bank.xp -= amount;
+
+                saveData();
+
+                return interaction.reply(
+                    `✅ Removed **${amount.toLocaleString()} XP** from <@${user.id}>'s personal bank.\n\n` +
+                    `⭐ New balance: **${bank.xp.toLocaleString()} XP**`
+                );
             }
 
             // =================================================
@@ -2303,13 +2130,13 @@ client.on(
                         user.id
                     );
 
-                bank.gems +=
-                    amount;
+                bank.gems += amount;
 
                 saveData();
 
                 return interaction.reply(
-                    `✅ Added **${amount.toLocaleString()} gems** to <@${user.id}>'s personal bank.\n💎 New balance: **${bank.gems.toLocaleString()} gems**`
+                    `✅ Added **${amount.toLocaleString()} gems** to <@${user.id}>'s personal bank.\n\n` +
+                    `💎 New balance: **${bank.gems.toLocaleString()} gems**`
                 );
             }
 
@@ -2352,7 +2179,6 @@ client.on(
                     amount >
                     bank.gems
                 ) {
-
                     return interaction.reply({
                         content:
                             `❌ <@${user.id}> only has **${bank.gems.toLocaleString()} gems**.`,
@@ -2360,13 +2186,13 @@ client.on(
                     });
                 }
 
-                bank.gems -=
-                    amount;
+                bank.gems -= amount;
 
                 saveData();
 
                 return interaction.reply(
-                    `✅ Removed **${amount.toLocaleString()} gems** from <@${user.id}>'s personal bank.\n💎 New balance: **${bank.gems.toLocaleString()} gems**`
+                    `✅ Removed **${amount.toLocaleString()} gems** from <@${user.id}>'s personal bank.\n\n` +
+                    `💎 New balance: **${bank.gems.toLocaleString()} gems**`
                 );
             }
 
@@ -2418,12 +2244,8 @@ client.on(
                     );
 
                 if (existing) {
-
-                    existing.amount +=
-                        amount;
-
+                    existing.amount += amount;
                 } else {
-
                     bank.items.push({
                         name:
                             itemName,
@@ -2485,27 +2307,30 @@ client.on(
                             itemName.toLowerCase()
                     );
 
-                if (
-                    !existing ||
-                    existing.amount <
-                    amount
-                ) {
-
+                if (!existing) {
                     return interaction.reply({
                         content:
-                            `❌ <@${user.id}> doesn't have **${amount}x ${itemName}**.`,
+                            `❌ <@${user.id}> doesn't have **${itemName}**.`,
                         ephemeral: true
                     });
                 }
 
-                existing.amount -=
-                    amount;
+                if (
+                    existing.amount <
+                    amount
+                ) {
+                    return interaction.reply({
+                        content:
+                            `❌ <@${user.id}> only has **${existing.amount}x ${itemName}**.`,
+                        ephemeral: true
+                    });
+                }
+
+                existing.amount -= amount;
 
                 if (
-                    existing.amount <=
-                    0
+                    existing.amount <= 0
                 ) {
-
                     bank.items =
                         bank.items.filter(
                             item =>
@@ -2532,7 +2357,6 @@ client.on(
                 const button =
                     new ActionRowBuilder()
                         .addComponents(
-
                             new ButtonBuilder()
                                 .setCustomId(
                                     "open_chest"
@@ -2594,44 +2418,32 @@ client.on(
                         : "None";
 
                 return interaction.reply({
-
                     embeds: [
-
                         new EmbedBuilder()
-
                             .setTitle(
                                 `🏦 ${interaction.user.username}'s Personal Bank`
                             )
-
                             .addFields(
-
                                 {
-                                    name:
-                                        "⭐ XP",
+                                    name: "⭐ XP",
                                     value:
                                         bank.xp.toLocaleString(),
                                     inline: true
                                 },
-
                                 {
-                                    name:
-                                        "💎 Gems",
+                                    name: "💎 Gems",
                                     value:
                                         bank.gems.toLocaleString(),
                                     inline: true
                                 },
-
                                 {
-                                    name:
-                                        "🐾 Items",
+                                    name: "🐾 Huge / Items",
                                     value:
                                         itemsText,
                                     inline: false
                                 },
-
                                 {
-                                    name:
-                                        "🚨 Titanics",
+                                    name: "🚨 Titanics",
                                     value:
                                         titanicsText,
                                     inline: false
@@ -2664,27 +2476,19 @@ client.on(
                         : "None";
 
                 return interaction.reply({
-
                     embeds: [
-
                         new EmbedBuilder()
-
                             .setTitle(
                                 "🏦 League Bank"
                             )
-
                             .addFields(
-
                                 {
-                                    name:
-                                        "💎 Gems",
+                                    name: "💎 Gems",
                                     value:
                                         bank.gems.toLocaleString()
                                 },
-
                                 {
-                                    name:
-                                        "📦 Items",
+                                    name: "📦 Items",
                                     value:
                                         itemsText
                                 }
@@ -2731,7 +2535,6 @@ client.on(
                     type === "item" &&
                     !itemName
                 ) {
-
                     return interaction.reply({
                         content:
                             "❌ You must provide an item name.",
@@ -2749,7 +2552,8 @@ client.on(
                     saveData();
 
                     return interaction.reply(
-                        `✅ Added **${amount.toLocaleString()} gems** to the League Bank.`
+                        `✅ Added **${amount.toLocaleString()} gems** to the League Bank.\n\n` +
+                        `💎 New balance: **${guildData.bank.gems.toLocaleString()} gems**`
                     );
                 }
 
@@ -2761,12 +2565,8 @@ client.on(
                     );
 
                 if (existing) {
-
-                    existing.amount +=
-                        amount;
-
+                    existing.amount += amount;
                 } else {
-
                     guildData.bank.items.push({
                         name:
                             itemName,
@@ -2819,7 +2619,6 @@ client.on(
                     type === "item" &&
                     !itemName
                 ) {
-
                     return interaction.reply({
                         content:
                             "❌ You must provide an item name.",
@@ -2835,7 +2634,6 @@ client.on(
                         amount >
                         guildData.bank.gems
                     ) {
-
                         return interaction.reply({
                             content:
                                 "❌ The League Bank doesn't have enough gems.",
@@ -2865,7 +2663,6 @@ client.on(
                     existing.amount <
                     amount
                 ) {
-
                     return interaction.reply({
                         content:
                             "❌ The League Bank doesn't have enough of that item.",
@@ -2873,14 +2670,11 @@ client.on(
                     });
                 }
 
-                existing.amount -=
-                    amount;
+                existing.amount -= amount;
 
                 if (
-                    existing.amount <=
-                    0
+                    existing.amount <= 0
                 ) {
-
                     guildData.bank.items =
                         guildData.bank.items.filter(
                             item =>
@@ -2924,7 +2718,7 @@ client.on(
                 return interaction.reply(
                     `🧹 **Factory reset complete.**\n\n` +
                     `Removed **${count}** tracked player(s).\n\n` +
-                    `🏦 Personal banks, XP, gems and items were **NOT changed**.`
+                    `🏦 Personal banks and XP were **NOT changed**.`
                 );
             }
 
@@ -2944,7 +2738,6 @@ client.on(
                     );
 
                 if (existing) {
-
                     return interaction.reply({
                         content:
                             "❌ You already have an open withdrawal request.",
@@ -2963,7 +2756,6 @@ client.on(
                     bank.items.length === 0 &&
                     bank.titanics.length === 0
                 ) {
-
                     return interaction.reply({
                         content:
                             "❌ Your personal bank is empty.",
@@ -2992,7 +2784,7 @@ client.on(
                             TextInputStyle.Paragraph
                         )
                         .setPlaceholder(
-                            "25m gems, 1 Random Huge, 1 TITANIC"
+                            "Example: 25m gems, 1 Random Huge, 1 TITANIC"
                         )
                         .setRequired(true)
                         .setMaxLength(500);
@@ -3015,16 +2807,11 @@ client.on(
                         .setMaxLength(100);
 
                 modal.addComponents(
+                    new ActionRowBuilder()
+                        .addComponents(amount),
 
                     new ActionRowBuilder()
-                        .addComponents(
-                            amount
-                        ),
-
-                    new ActionRowBuilder()
-                        .addComponents(
-                            roblox
-                        )
+                        .addComponents(roblox)
                 );
 
                 return interaction.showModal(
@@ -3051,7 +2838,6 @@ client.on(
             ) {
 
                 if (!interaction.guildId) {
-
                     return interaction.reply({
                         content:
                             "❌ Use this inside a server.",
@@ -3070,10 +2856,7 @@ client.on(
                         interaction.user.id
                     );
 
-                if (
-                    bank.xp < 1
-                ) {
-
+                if (bank.xp < 1) {
                     return interaction.reply({
                         content:
                             "❌ You need **1 XP** to open this chest.",
@@ -3097,19 +2880,14 @@ client.on(
                     saveData();
 
                     return interaction.reply({
-
                         embeds: [
-
                             new EmbedBuilder()
-
                                 .setTitle(
                                     "🎁 CHEST OPENED!"
                                 )
-
                                 .setDescription(
                                     `You used **1 XP** and won **${reward.amount.toLocaleString()} gems!** 💎`
                                 )
-
                                 .addFields({
                                     name:
                                         "⭐ Remaining XP",
@@ -3128,26 +2906,20 @@ client.on(
                     bank.items.push({
                         name:
                             "Random Huge",
-                        amount:
-                            1
+                        amount: 1
                     });
 
                     saveData();
 
                     return interaction.reply({
-
                         embeds: [
-
                             new EmbedBuilder()
-
                                 .setTitle(
                                     "🎁 CHEST OPENED!"
                                 )
-
                                 .setDescription(
                                     "🐾 **YOU WON A RANDOM HUGE!**"
                                 )
-
                                 .addFields({
                                     name:
                                         "⭐ Remaining XP",
@@ -3158,40 +2930,29 @@ client.on(
                     });
                 }
 
-                if (
-                    reward.type ===
-                    "titanic"
-                ) {
+                bank.titanics.push(
+                    "TITANIC"
+                );
 
-                    bank.titanics.push(
-                        "TITANIC"
-                    );
+                saveData();
 
-                    saveData();
-
-                    return interaction.reply({
-
-                        embeds: [
-
-                            new EmbedBuilder()
-
-                                .setTitle(
-                                    "🚨🚨🚨 TITANIC! 🚨🚨🚨"
-                                )
-
-                                .setDescription(
-                                    "YOU JUST HIT THE **0.1% TITANIC!**"
-                                )
-
-                                .addFields({
-                                    name:
-                                        "⭐ Remaining XP",
-                                    value:
-                                        bank.xp.toLocaleString()
-                                })
-                        ]
-                    });
-                }
+                return interaction.reply({
+                    embeds: [
+                        new EmbedBuilder()
+                            .setTitle(
+                                "🚨🚨🚨 TITANIC! 🚨🚨🚨"
+                            )
+                            .setDescription(
+                                "YOU JUST HIT THE **0.1% TITANIC!**"
+                            )
+                            .addFields({
+                                name:
+                                    "⭐ Remaining XP",
+                                value:
+                                    bank.xp.toLocaleString()
+                            })
+                    ]
+                });
             }
 
             // =================================================
@@ -3216,7 +2977,6 @@ client.on(
                     );
 
                 if (!found) {
-
                     return interaction.reply({
                         content:
                             "❌ That withdrawal request no longer exists.",
@@ -3231,7 +2991,7 @@ client.on(
                 } = found;
 
                 // CRITICAL:
-                // Verify Bank Owner in original server.
+                // Check the owner's role in the ORIGINAL SERVER.
                 const owner =
                     await isBankOwner(
                         interaction.user.id,
@@ -3239,7 +2999,6 @@ client.on(
                     );
 
                 if (!owner) {
-
                     return interaction.reply({
                         content:
                             "❌ You are not a Bank Owner for this server.",
@@ -3251,7 +3010,6 @@ client.on(
                     request.status !==
                     "pending"
                 ) {
-
                     return interaction.reply({
                         content:
                             "❌ This request has already been handled.",
@@ -3277,7 +3035,6 @@ client.on(
                     );
 
                 if (!ownership.ok) {
-
                     return interaction.reply({
                         content:
                             `❌ **Cannot approve this withdrawal.**\n\n${ownership.reason}`,
@@ -3341,7 +3098,6 @@ client.on(
                     if (channel) {
 
                         await channel.send({
-
                             content:
                                 `✅ <@${request.userId}>, your withdrawal request was **approved**!\n📬 Check your mail soon.`,
 
@@ -3362,12 +3118,9 @@ client.on(
                 }
 
                 return interaction.update({
-
                     content:
                         "✅ **Withdrawal approved successfully.**",
-
                     embeds: [],
-
                     components: []
                 });
             }
@@ -3394,7 +3147,6 @@ client.on(
                     );
 
                 if (!found) {
-
                     return interaction.reply({
                         content:
                             "❌ That withdrawal request no longer exists.",
@@ -3414,7 +3166,6 @@ client.on(
                     );
 
                 if (!owner) {
-
                     return interaction.reply({
                         content:
                             "❌ You are not a Bank Owner for this server.",
@@ -3426,7 +3177,6 @@ client.on(
                     request.status !==
                     "pending"
                 ) {
-
                     return interaction.reply({
                         content:
                             "❌ This request has already been handled.",
@@ -3462,9 +3212,7 @@ client.on(
 
                 modal.addComponents(
                     new ActionRowBuilder()
-                        .addComponents(
-                            reason
-                        )
+                        .addComponents(reason)
                 );
 
                 return interaction.showModal(
@@ -3482,7 +3230,7 @@ client.on(
         ) {
 
             // =================================================
-            // WITHDRAW
+            // WITHDRAW MODAL
             // =================================================
 
             if (
@@ -3491,7 +3239,6 @@ client.on(
             ) {
 
                 if (!interaction.guildId) {
-
                     return interaction.reply({
                         content:
                             "❌ Use this inside a server.",
@@ -3511,7 +3258,6 @@ client.on(
                     );
 
                 if (existing) {
-
                     return interaction.reply({
                         content:
                             "❌ You already have an open withdrawal request.",
@@ -3539,10 +3285,9 @@ client.on(
                     parsed.items.length === 0 &&
                     parsed.titanics <= 0
                 ) {
-
                     return interaction.reply({
                         content:
-                            "❌ I couldn't understand that request.\n\nExample: `25m gems, 1 Random Huge, 1 TITANIC`",
+                            "❌ I couldn't understand what you're requesting.\n\nExample: `25m gems, 1 Random Huge, 1 TITANIC`",
                         ephemeral: true
                     });
                 }
@@ -3590,12 +3335,10 @@ client.on(
                 saveData();
 
                 await interaction.reply({
-
                     content:
                         "✅ **Withdrawal request submitted!**\n\n" +
-                        "🏦 Bank owners have been notified.\n" +
+                        "🏦 The bank owners have been notified.\n" +
                         "⏳ Waiting for approval.",
-
                     ephemeral: true
                 });
 
@@ -3635,7 +3378,6 @@ client.on(
                     );
 
                 if (!found) {
-
                     return interaction.reply({
                         content:
                             "❌ That request no longer exists.",
@@ -3655,7 +3397,6 @@ client.on(
                     );
 
                 if (!owner) {
-
                     return interaction.reply({
                         content:
                             "❌ You are not a Bank Owner for this server.",
@@ -3667,7 +3408,6 @@ client.on(
                     request.status !==
                     "pending"
                 ) {
-
                     return interaction.reply({
                         content:
                             "❌ This request has already been handled.",
@@ -3731,7 +3471,6 @@ client.on(
                     if (channel) {
 
                         await channel.send({
-
                             content:
                                 `❌ <@${request.userId}>, your withdrawal request was **rejected**.\n📝 **Reason:** ${reason}`,
 
@@ -3752,10 +3491,8 @@ client.on(
                 }
 
                 return interaction.reply({
-
                     content:
                         "❌ Withdrawal rejected. The user has been notified.",
-
                     ephemeral: true
                 });
             }
@@ -3885,7 +3622,6 @@ async function runTracker() {
                 }
 
                 await channel.send({
-
                     content:
                         `🚨 <@${tracked.discordUserId}>\n\n` +
                         `**LOCK IN GET ON** 🔒\n\n` +
@@ -3909,7 +3645,7 @@ async function runTracker() {
 
                 console.error(
                     `❌ Tracker error for ${tracked.username}:`,
-                    error
+                    error.message
                 );
             }
         }
