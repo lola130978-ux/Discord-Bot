@@ -591,18 +591,117 @@ async function checkPlayer(tracked) {
 }
 
 // ============================================================
-// TROLL CHEST
+// CHEST
 // ============================================================
 
 function rollChestReward() {
+    const roll = Math.random() * 100;
 
+    // 50% Random Huge
+    if (roll < 50) {
+        return {
+            type: "huge",
+            name: "Random Huge"
+        };
+    }
+
+    // 25% 25M Gems
+    if (roll < 75) {
+        return {
+            type: "gems",
+            amount: 25_000_000
+        };
+    }
+
+    // 15% 45M Gems
+    if (roll < 90) {
+        return {
+            type: "gems",
+            amount: 45_000_000
+        };
+    }
+
+    // 5% 100M Gems
+    if (roll < 95) {
+        return {
+            type: "gems",
+            amount: 100_000_000
+        };
+    }
+
+    // 3% 250M Gems
+    if (roll < 98) {
+        return {
+            type: "gems",
+            amount: 250_000_000
+        };
+    }
+
+    // 1.9% 300M Gems
+    if (roll < 99.9) {
+        return {
+            type: "gems",
+            amount: 300_000_000
+        };
+    }
+
+    // 0.1% Titanic
     return {
-        type: "troll",
-        name:
-            "FUCK YOU GET TROLLED LMAO"
+        type: "titanic",
+        name: "TITANIC"
     };
 }
 
+function chestEmbed() {
+    return new EmbedBuilder()
+        .setTitle("🎁 PS99 League Chest")
+        .setDescription(
+            "Spend **1 XP** to open this chest.\n\n" +
+            "Click **Open Chest** below to roll your reward."
+        )
+        .addFields(
+            {
+                name: "🐾 Random Huge",
+                value: "50%",
+                inline: true
+            },
+            {
+                name: "💎 25M Gems",
+                value: "25%",
+                inline: true
+            },
+            {
+                name: "💎 45M Gems",
+                value: "15%",
+                inline: true
+            },
+            {
+                name: "💎 100M Gems",
+                value: "5%",
+                inline: true
+            },
+            {
+                name: "💎 250M Gems",
+                value: "3%",
+                inline: true
+            },
+            {
+                name: "💎 300M Gems",
+                value: "1.9%",
+                inline: true
+            },
+            {
+                name: "🚨 TITANIC",
+                value: "0.1%",
+                inline: true
+            },
+            {
+                name: "⭐ Cost",
+                value: "1 XP",
+                inline: true
+            }
+        );
+}
 // ============================================================
 // WITHDRAWAL HELPERS
 // ============================================================
