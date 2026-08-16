@@ -543,68 +543,62 @@ async function checkPlayer(tracked) {
     };
 }
 
-// ============================================================
+// =================================================
 // CHEST
-// ============================================================
+// =================================================
 
-function rollChestReward() {
-    return {
-        type: "troll",
-        name: " GET TROLLED BOZO L EZ+BAD JEW LMAO"
-    };
-}
+if (
+    interaction.customId ===
+    "open_chest"
+) {
 
-function chestEmbed() {
-    return new EmbedBuilder()
-        .setTitle(
-            "🎁 PS99 League Chest"
-        )
-        .setDescription(
-            "Spend **1 XP** to open this chest.\n\n" +
-            "Click **Open Chest** below to roll your reward."
-        )
-        .addFields(
-            {
-                name: "🐾 Random Huge",
-                value: "100%",
-                inline: true
-            },
-            {
-                name: "💎 25M Gems",
-                value: "25%",
-                inline: true
-            },
-            {
-                name: "💎 45M Gems",
-                value: "15%",
-                inline: true
-            },
-            {
-                name: "💎 100M Gems",
-                value: "5%",
-                inline: true
-            },
-            {
-                name: "💎 250M Gems",
-                value: "3%",
-                inline: true
-            },
-            {
-                name: "💎 300M Gems",
-                value: "1.9%",
-                inline: true
-            },
-            {
-                name: "🚨 TITANIC",
-                value: "0.1%",
-                inline: true
-            },
-            {
-                name: "⭐ Cost",
-                value: "1 XP",
-                inline: true
-            }
+    if (!interaction.guildId) {
+        return interaction.reply({
+            content:
+                "❌ Use this inside a server.",
+            ephemeral: true
+        });
+    }
+
+    const guildData =
+        getGuildData(
+            interaction.guildId
         );
+
+    const bank =
+        getPersonalBank(
+            guildData,
+            interaction.user.id
+        );
+
+    if (bank.xp < 1) {
+        return interaction.reply({
+            content:
+                "❌ You need **1 XP** to open this chest.",
+            ephemeral: true
+        });
+    }
+
+    // Take 1 XP
+    bank.xp -= 1;
+
+    // 😈 TROLL
+    saveData();
+
+    return interaction.reply({
+        embeds: [
+            new EmbedBuilder()
+                .setTitle("🎁 CHEST OPENED!")
+                .setDescription(
+                    "💀 **FUCK YOU GET TROLLED LMAO**"
+                )
+                .addFields({
+                    name: "⭐ Remaining XP",
+                    value:
+                        bank.xp.toLocaleString()
+                })
+        ]
+    });
 }
 
 // ============================================================
